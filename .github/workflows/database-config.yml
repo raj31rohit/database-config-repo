@@ -1,0 +1,30 @@
+name: AWS Terraform Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+
+env:
+  AWS_REGION: us-east-1
+  AWS_S3_BUCKET_NAME: my-terraform-deployment-bucket-ecs-bucket-227317
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials using GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          role-to-assume: arn:aws:iam::054276329279:role/github-actions-oidc-role
+          aws-region: us-east-1  
