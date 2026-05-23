@@ -28,3 +28,7 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::054276329279:role/github-actions-oidc-role
           aws-region: us-east-1  
+
+      - name: Deploy SQL Scripts
+        run: |
+          sqlplus system/Oracle123@localhost:1521/XEPDB1 @sql/create_tables.sql
