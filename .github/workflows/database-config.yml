@@ -30,5 +30,7 @@ jobs:
           aws-region: us-east-1  
 
       - name: Deploy SQL Scripts
+        shell: cmd
         run: |
           sqlplus system/Oracle123@localhost:1521/XEPDB1 @sql/create_tables.sql
+          
