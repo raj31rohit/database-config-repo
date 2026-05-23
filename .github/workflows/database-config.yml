@@ -17,8 +17,8 @@ env:
 
 jobs:
   terraform:
-    runs-on: ubuntu-latest
-    environment: production
+    runs-on: self-hosted
+    environment: development
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
