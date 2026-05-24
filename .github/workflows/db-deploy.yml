@@ -16,17 +16,19 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Verify Migration Files
+        shell: powershell
+        run: |
+          dir "${{ github.workspace }}\database\migrations"
+
       - name: Run Flyway Migration
         shell: powershell
         run: |
-          
+
           docker run --rm `
-            -v "${{ github.workspace }}/database/migrations:/flyway/sql" `
+            -v "${{ github.workspace }}\database\migrations:/flyway/sql" `
             flyway/flyway `
             -url=jdbc:oracle:thin:@host.docker.internal:1521/XEPDB1 `
-            -user=system `
-            -password=Oracle123 `
+            -user=APP_USER `
+            -password=app123 `
             migrate
-
-
-
