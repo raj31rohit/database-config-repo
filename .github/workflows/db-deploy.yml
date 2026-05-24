@@ -17,16 +17,16 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run Flyway Migration
-        shell: cmd
-
+        shell: powershell
         run: |
-
-          docker run --rm \
-            -v ${{ github.workspace }}/database/migrations:/flyway/sql \
-            flyway/flyway \
-            -url=jdbc:oracle:thin:@host.docker.internal:1521/XEPDB1 \
-            -user=system \
-            -password=Oracle123 \
+          
+          docker run --rm `
+            -v "${{ github.workspace }}/database/migrations:/flyway/sql" `
+            flyway/flyway `
+            -url=jdbc:oracle:thin:@host.docker.internal:1521/XEPDB1 `
+            -user=system `
+            -password=Oracle123 `
             migrate
 
-            
+
+
