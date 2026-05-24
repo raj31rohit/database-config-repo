@@ -16,7 +16,7 @@ jobs:
     environment: PROD
 
     env:
-      DB_CONNECT: ${{ secrets.DB_CONNECT }}
+      DB_URL: ${{ secrets.DB_URL }}
       DB_USER: ${{ secrets.DB_USER }}
       DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
 
@@ -52,11 +52,11 @@ jobs:
             Write-Host "No branch match found"
           }
 
-          if ($env:DB_CONNECT) {
-            Write-Host "DB_CONNECT exists"
+          if ($env:DB_URL) {
+            Write-Host "DB_URL exists"
           }
           else {
-            Write-Host "DB_CONNECT missing"
+            Write-Host "DB_URL missing"
             exit 1
           }
 
@@ -107,7 +107,7 @@ jobs:
         run: |
 
           sqlplus `
-            $env:DB_USER/$env:DB_PASSWORD@$env:DB_CONNECT `
+            $env:DB_USER/$env:DB_PASSWORD@$env:DB_URL `
             @release.sql
 
       # =====================================================
@@ -129,7 +129,7 @@ jobs:
           "@ | Out-File compile.sql
 
           sqlplus `
-            $env:DB_USER/$env:DB_PASSWORD@$env:DB_CONNECT `
+            $env:DB_USER/$env:DB_PASSWORD@$env:DB_URL `
             @compile.sql
 
       # =====================================================
@@ -153,5 +153,5 @@ jobs:
 
           sqlplus `
             -s `
-            $env:DB_USER/$env:DB_PASSWORD@$env:DB_CONNECT `
+            $env:DB_USER/$env:DB_PASSWORD@$env:DB_URL `
             @validate_invalid.sql
