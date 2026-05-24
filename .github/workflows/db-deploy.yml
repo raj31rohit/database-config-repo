@@ -7,11 +7,21 @@ on:
       - qa
       - main
 
+
+
 jobs:
 
   deploy-db:
 
     runs-on: self-hosted
+
+    
+    environment: PROD
+
+    env:
+      DB_URL: ${{ secrets.DB_URL }}
+      DB_USER: ${{ secrets.DB_USER }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
 
     steps:
 
