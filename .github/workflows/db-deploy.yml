@@ -17,6 +17,8 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run Flyway Migration
+        shell: cmd
+
         run: |
 
           docker run --rm \
@@ -26,3 +28,5 @@ jobs:
             -user=system \
             -password=Oracle123 \
             migrate
+
+            
