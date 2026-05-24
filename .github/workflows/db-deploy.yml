@@ -32,3 +32,4 @@ jobs:
             -user=APP_USER `
             -password=app123 `
             migrate
+            
