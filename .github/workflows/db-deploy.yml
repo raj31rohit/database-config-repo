@@ -113,6 +113,13 @@ jobs:
             -password="$env:DB_PASSWORD" `
             info
 
+
+      - name: Debug Repeatable Folder
+        shell: powershell
+        run: |
+          Write-Host "=== MIG
+
+   
       - name: Flyway Migrate
         shell: powershell
         run: |
