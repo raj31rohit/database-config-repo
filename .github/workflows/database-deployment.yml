@@ -107,7 +107,7 @@ jobs:
         run: |
 
             @"
-            CONNECT $env:DB_USER/$env:DB_PASSWORD@$env:DB_URL
+            CONNECT $env:DB_USER/$env:DB_PASSWORD@$env:localhost:1521/XEPDB1
 
             @release.sql
 
@@ -139,7 +139,7 @@ jobs:
     #       "@ | Out-File compile.sql
 
     #         sqlplus `
-    #         "$env:DB_USER/$env:DB_PASSWORD@$env:DB_URL" `
+    #         "$env:DB_USER/$env:DB_PASSWORD@$env:DB_CONNECT" `
     #         "@/compile.sql"
 
     #   # =====================================================
