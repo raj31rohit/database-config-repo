@@ -106,9 +106,9 @@ jobs:
         shell: powershell
         run: |
 
-          sqlplus `
-            $env:DB_USER/$env:DB_PASSWORD@$env:DB_URL `
-            @release.sql
+            sqlplus `
+            "$env:DB_USER/$env:DB_PASSWORD@$env:DB_CONNECT" `
+            "@/release.sql"
 
       # =====================================================
       # Compile Invalid Objects
@@ -128,9 +128,9 @@ jobs:
           EXIT;
           "@ | Out-File compile.sql
 
-          sqlplus `
-            $env:DB_USER/$env:DB_PASSWORD@$env:DB_URL `
-            @compile.sql
+            sqlplus `
+            "$env:DB_USER/$env:DB_PASSWORD@$env:DB_CONNECT" `
+            "@/compile.sql"
 
       # =====================================================
       # Validate Invalid Objects
