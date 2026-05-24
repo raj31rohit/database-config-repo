@@ -75,4 +75,5 @@ jobs:
             -url="$env:DB_URL" `
             -user="$env:DB_USER" `
             -password="$env:DB_PASSWORD" `
+            -locations="filesystem:/flyway/sql,filesystem:/flyway/repeatable" `
             migrate
