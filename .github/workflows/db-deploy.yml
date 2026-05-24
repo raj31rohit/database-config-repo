@@ -1,0 +1,28 @@
+name: DB Deployment
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+
+  deploy-db:
+
+    runs-on: self-hosted
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Run Flyway Migration
+        run: |
+
+          docker run --rm \
+            -v ${{ github.workspace }}/database/migrations:/flyway/sql \
+            flyway/flyway \
+            -url=jdbc:oracle:thin:@host.docker.internal:1521/XEPDB1 \
+            -user=system \
+            -password=Oracle123 \
+            migrate
