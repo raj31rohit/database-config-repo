@@ -3,6 +3,7 @@ schema: APP_SCHEMA
 deploy_order:
 
   - tables/customer_address.sql
+  - tables/products.sql
 
 
   # - constraints/fk_orders_customer.sql
