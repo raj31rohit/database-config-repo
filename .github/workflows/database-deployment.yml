@@ -106,11 +106,13 @@ jobs:
         shell: powershell
         run: |
 
-                $conn = "$env:DB_USER/$env:DB_PASSWORD@$env:DB_CONNECT"
+            $user = $env:DB_USER
+            $pass = $env:DB_PASSWORD
+            $db = $env:DB_CONNECT
 
-                Write-Host "Executing release.sql"
+            Write-Host "Executing release.sql"
 
-                sqlplus $conn "@release.sql"
+            sqlplus "${user}/${pass}@${db}" "@release.sql"
 
       # =====================================================
       # Compile Invalid Objects
