@@ -26,7 +26,7 @@ jobs:
           docker run --rm `
             -v "${{ github.workspace }}\database\migrations:/flyway/sql" `
             flyway/flyway `
-            -url=$env:DB_URL `
-            -user=$env:DB_USER `
-            -password=$env:DB_PASSWORD `
+            -url="$env:DB_URL" `
+            -user="$env:DB_USER" `
+            -password="$env:DB_PASSWORD" `
             repair
