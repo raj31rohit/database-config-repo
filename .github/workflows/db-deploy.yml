@@ -131,10 +131,10 @@ jobs:
 
           docker run --rm `
             -v "${{ github.workspace }}\database\migrations:/flyway/sql" `
-            -v "${{ github.workspace }}\database\repeatable:/flyway/repeatable" `
+            # -v "${{ github.workspace }}\database\repeatable:/flyway/repeatable" `
             flyway/flyway `
             -url="$env:DB_URL" `
             -user="$env:DB_USER" `
             -password="$env:DB_PASSWORD" `
-            -locations="filesystem:/flyway/sql,filesystem:/flyway/repeatable" `
+            # -locations="filesystem:/flyway/sql,filesystem:/flyway/repeatable" `
             migrate
