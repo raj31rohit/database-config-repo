@@ -1,0 +1,15 @@
+schema: APP_SCHEMA
+
+deploy_order:
+
+  - tables/customer_address.sql
+
+
+  # - constraints/fk_orders_customer.sql
+
+  # - indexes/idx_orders_customer.sql
+
+  # - views/vw_orders.sql
+
+  # - packages/customer_pkg_spec.sql
+  # - packages/customer_pkg_body.sql
