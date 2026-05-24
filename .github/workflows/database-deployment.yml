@@ -107,7 +107,7 @@ jobs:
         run: |
 
             @"
-            CONNECT $env:DB_USER/$env:DB_PASSWORD@$env:DB_CONNECT
+            CONNECT $env:DB_USER/$env:DB_PASSWORD@$env:DB_URL
 
             @release.sql
 
@@ -139,7 +139,7 @@ jobs:
     #       "@ | Out-File compile.sql
 
     #         sqlplus `
-    #         "$env:DB_USER/$env:DB_PASSWORD@$env:DB_CONNECT" `
+    #         "$env:DB_USER/$env:DB_PASSWORD@$env:DB_URL" `
     #         "@/compile.sql"
 
     #   # =====================================================
