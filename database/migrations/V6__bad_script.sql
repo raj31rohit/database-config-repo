@@ -1,3 +1,3 @@
-CREATE TABL TEST (
+CREATE table TEST (
    ID NUMBER
 );
