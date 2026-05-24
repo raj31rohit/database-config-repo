@@ -19,6 +19,7 @@ jobs:
       DB_URL: ${{ secrets.DB_URL }}
       DB_USER: ${{ secrets.DB_USER }}
       DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      DB_CONNECT: "localhost:1521/XEPDB1"
 
     steps:
 
@@ -107,7 +108,7 @@ jobs:
         run: |
 
             @"
-            CONNECT $env:DB_USER/$env:DB_PASSWORD@$env:localhost:1521/XEPDB1
+            CONNECT $env:DB_USER/$env:DB_PASSWORD@$env:DB_CONNECT
 
             @release.sql
 
