@@ -106,52 +106,54 @@ jobs:
         shell: powershell
         run: |
 
-            sqlplus `
-            "$env:DB_USER/$env:DB_PASSWORD@$env:DB_CONNECT" `
-            "@/release.sql"
+                $conn = "$env:DB_USER/$env:DB_PASSWORD@$env:DB_CONNECT"
+
+                Write-Host "Executing release.sql"
+
+                sqlplus $conn "@release.sql"
 
       # =====================================================
       # Compile Invalid Objects
       # =====================================================
 
-      - name: Compile Invalid Objects
-        shell: powershell
-        run: |
+    #   - name: Compile Invalid Objects
+    #     shell: powershell
+    #     run: |
 
-          @"
-          BEGIN
-            DBMS_UTILITY.compile_schema(
-              schema => 'APP_SCHEMA'
-            );
-          END;
-          /
-          EXIT;
-          "@ | Out-File compile.sql
+    #       @"
+    #       BEGIN
+    #         DBMS_UTILITY.compile_schema(
+    #           schema => 'APP_SCHEMA'
+    #         );
+    #       END;
+    #       /
+    #       EXIT;
+    #       "@ | Out-File compile.sql
 
-            sqlplus `
-            "$env:DB_USER/$env:DB_PASSWORD@$env:DB_CONNECT" `
-            "@/compile.sql"
+    #         sqlplus `
+    #         "$env:DB_USER/$env:DB_PASSWORD@$env:DB_CONNECT" `
+    #         "@/compile.sql"
 
-      # =====================================================
-      # Validate Invalid Objects
-      # =====================================================
+    #   # =====================================================
+    #   # Validate Invalid Objects
+    #   # =====================================================
 
-      - name: Validate Invalid Objects
-        shell: powershell
-        run: |
+    #   - name: Validate Invalid Objects
+    #     shell: powershell
+    #     run: |
 
-          @"
-          SET HEADING OFF;
-          SET FEEDBACK OFF;
+    #       @"
+    #       SET HEADING OFF;
+    #       SET FEEDBACK OFF;
 
-          SELECT object_name || ' - ' || object_type
-          FROM user_objects
-          WHERE status = 'INVALID';
+    #       SELECT object_name || ' - ' || object_type
+    #       FROM user_objects
+    #       WHERE status = 'INVALID';
 
-          EXIT;
-          "@ | Out-File validate_invalid.sql
+    #       EXIT;
+    #       "@ | Out-File validate_invalid.sql
 
-          sqlplus `
-            -s `
-            $env:DB_USER/$env:DB_PASSWORD@$env:DB_URL `
-            @validate_invalid.sql
+    #       sqlplus `
+    #         -s `
+    #         $env:DB_USER/$env:DB_PASSWORD@$env:DB_URL `
+    #         @validate_invalid.sql
