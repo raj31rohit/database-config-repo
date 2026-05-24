@@ -3,6 +3,8 @@ name: DB Deployment
 on:
   push:
     branches:
+      - develop
+      - qa
       - main
 
 jobs:
@@ -10,31 +12,67 @@ jobs:
   deploy-db:
 
     runs-on: self-hosted
-    env:
-      DB_URL: ${{ secrets.DB_URL }}
-      DB_USER: ${{ secrets.DB_USER }}
-      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-
 
     steps:
 
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Verify Migration Files
+      - name: Set Environment Variables
         shell: powershell
         run: |
-          dir "${{ github.workspace }}\database\migrations"
 
-      - name: Run Flyway Migration
+          if ("${{ github.ref_name }}" -eq "develop") {
+            echo "DB_URL=${{ secrets.DEV_DB_URL }}" >> $env:GITHUB_ENV
+            echo "DB_USER=${{ secrets.DEV_DB_USER }}" >> $env:GITHUB_ENV
+            echo "DB_PASSWORD=${{ secrets.DEV_DB_PASSWORD }}" >> $env:GITHUB_ENV
+          }
+
+          elseif ("${{ github.ref_name }}" -eq "qa") {
+            echo "DB_URL=${{ secrets.QA_DB_URL }}" >> $env:GITHUB_ENV
+            echo "DB_USER=${{ secrets.QA_DB_USER }}" >> $env:GITHUB_ENV
+            echo "DB_PASSWORD=${{ secrets.QA_DB_PASSWORD }}" >> $env:GITHUB_ENV
+          }
+
+          elseif ("${{ github.ref_name }}" -eq "main") {
+            echo "DB_URL=${{ secrets.PROD_DB_URL }}" >> $env:GITHUB_ENV
+            echo "DB_USER=${{ secrets.PROD_DB_USER }}" >> $env:GITHUB_ENV
+            echo "DB_PASSWORD=${{ secrets.PROD_DB_PASSWORD }}" >> $env:GITHUB_ENV
+          }
+
+      - name: Flyway Validate
         shell: powershell
         run: |
 
           docker run --rm `
             -v "${{ github.workspace }}\database\migrations:/flyway/sql" `
             flyway/flyway `
-            -url=${{ env.DB_URL }} `
-            -user=${{ env.DB_USER }} `
-            -password=${{ env.DB_PASSWORD }} `
+            -url="$env:DB_URL" `
+            -user="$env:DB_USER" `
+            -password="$env:DB_PASSWORD" `
+            validate
+
+      - name: Flyway Info
+        shell: powershell
+        run: |
+
+          docker run --rm `
+            -v "${{ github.workspace }}\database\migrations:/flyway/sql" `
+            flyway/flyway `
+            -url="$env:DB_URL" `
+            -user="$env:DB_USER" `
+            -password="$env:DB_PASSWORD" `
+            info
+
+      - name: Flyway Migrate
+        shell: powershell
+        run: |
+
+          docker run --rm `
+            -v "${{ github.workspace }}\database\migrations:/flyway/sql" `
+            -v "${{ github.workspace }}\database\repeatable:/flyway/repeatable" `
+            flyway/flyway `
+            -url="$env:DB_URL" `
+            -user="$env:DB_USER" `
+            -password="$env:DB_PASSWORD" `
             migrate
-            
