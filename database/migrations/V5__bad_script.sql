@@ -1,0 +1,3 @@
+CREATE TABL TEST (
+   ID NUMBER
+);
