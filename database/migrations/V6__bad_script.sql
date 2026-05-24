@@ -1,3 +1,0 @@
-CREATE table TEST (
-   ID NUMBER
-);
