@@ -106,19 +106,19 @@ jobs:
         shell: powershell
         run: |
 
-                @"
-                CONNECT $env:DB_USER/$env:DB_PASSWORD@$env:DB_CONNECT
+            @"
+            CONNECT $env:DB_USER/$env:DB_PASSWORD@$env:DB_CONNECT
 
-                @release.sql
+            @release.sql
 
-                EXIT;
-                "@ | Out-File run_release.sql -Encoding ascii
+            EXIT;
+            "@ | Out-File run_release.sql -Encoding ascii
 
-                Write-Host "===== run_release.sql ====="
+            Write-Host "===== run_release.sql ====="
 
-                Get-Content run_release.sql
+            Get-Content run_release.sql
 
-                sqlplus /nolog @run_release.sql
+            sqlplus /nolog "@run_release.sql"
 
       # =====================================================
       # Compile Invalid Objects
