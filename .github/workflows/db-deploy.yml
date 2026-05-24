@@ -114,14 +114,14 @@ jobs:
             info
 
 
-      - name: Debug Repeatable Folder
-        shell: powershell
-        run: |
-          Write-Host "=== MIGRATIONS ==="
-          dir "${{ github.workspace }}\database\migrations"
+    #   - name: Debug Repeatable Folder
+    #     shell: powershell
+    #     run: |
+    #       Write-Host "=== MIGRATIONS ==="
+    #       dir "${{ github.workspace }}\database\migrations"
 
-          Write-Host "=== REPEATABLE ==="
-          dir "${{ github.workspace }}\database\repeatable"
+    #       Write-Host "=== REPEATABLE ==="
+    #       dir "${{ github.workspace }}\database\repeatable"
 
    
           
