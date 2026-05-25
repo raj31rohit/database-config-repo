@@ -244,6 +244,7 @@ jobs:
 
     #       Get-Content $releaseFile
 
+
       # =====================================================
       # Execute Deployment
       # =====================================================
@@ -252,19 +253,45 @@ jobs:
         shell: powershell
         run: |
 
-            @"
-            CONNECT $env:DB_USER/$env:DB_PASSWORD@$env:DB_CONNECT
+          @"
+          CONNECT $env:DB_USER/$env:DB_PASSWORD@$env:DB_CONNECT
 
-            @release.sql
+          SET ECHO ON
+          SET SERVEROUTPUT ON
 
-            EXIT;
-            "@ | Out-File run_release.sql -Encoding ascii
+          @release.sql
 
-            Write-Host "===== run_release.sql ====="
+          EXIT;
+          "@ | Out-File run_release.sql -Encoding ascii
 
-            Get-Content run_release.sql
+          Write-Host ""
+          Write-Host "===== run_release.sql ====="
 
-            sqlplus /nolog "@run_release.sql"
+          Get-Content run_release.sql
+
+          sqlplus /nolog "@run_release.sql"
+
+      # # =====================================================
+      # # Execute Deployment
+      # # =====================================================
+
+      # - name: Execute release.sql
+      #   shell: powershell
+      #   run: |
+
+      #       @"
+      #       CONNECT $env:DB_USER/$env:DB_PASSWORD@$env:DB_CONNECT
+
+      #       @release.sql
+
+      #       EXIT;
+      #       "@ | Out-File run_release.sql -Encoding ascii
+
+      #       Write-Host "===== run_release.sql ====="
+
+      #       Get-Content run_release.sql
+
+      #       sqlplus /nolog "@run_release.sql"
 
       # =====================================================
       # Compile Invalid Objects
