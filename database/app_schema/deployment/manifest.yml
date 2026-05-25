@@ -11,6 +11,8 @@ deploy_order:
   - tables/customers.sql
   - tables/orders.sql
   - tables/payments.sql
+  - tables/shipment.sql
+  - indexes/idx_shipment.sql
 
   # =====================================================
   # CONSTRAINTS
