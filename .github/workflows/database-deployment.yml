@@ -60,6 +60,33 @@ jobs:
             Write-Host "DB_URL missing"
             exit 1
           }
+
+      # =====================================================
+      # Check Deployment Lock
+      # =====================================================
+
+      - name: Check Deployment Lock
+        shell: powershell
+        run: |
+
+          if (Test-Path "deployment.lock") {
+
+            Write-Host ""
+            Write-Host "================================================="
+            Write-Host "DEPLOYMENT LOCK DETECTED"
+            Write-Host "================================================="
+            Write-Host ""
+            Write-Host "Previous deployment failed."
+            Write-Host "Partial deployment may exist."
+            Write-Host ""
+            Write-Host "Fix deployment issue before new deployment."
+            Write-Host ""
+
+            exit 1
+          }
+
+          Write-Host "No deployment lock found."
+
       # =====================================================
       # Validate Structural Object Modifications
       # =====================================================
@@ -319,6 +346,42 @@ jobs:
 
           sqlplus /nolog "@run_release.sql"
 
+      # =====================================================
+      # Create Deployment Lock On Failure
+      # =====================================================
+
+      - name: Create Deployment Lock
+        if: failure()
+        shell: powershell
+        run: |
+
+          New-Item `
+            -Path "deployment.lock" `
+            -ItemType File `
+            -Force
+
+          @"
+          =================================================
+          DEPLOYMENT FAILED
+          =================================================
+
+          Branch:
+          ${{ github.ref_name }}
+
+          Commit:
+          ${{ github.sha }}
+
+          Workflow:
+          ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          Partial deployment may exist.
+
+          Manual intervention required.
+          "@ | Out-File deployment.lock
+
+          Write-Host ""
+          Write-Host "Deployment lock created."
+
       # # =====================================================
       # # Execute Deployment
       # # =====================================================
@@ -386,3 +449,26 @@ jobs:
     #         -s `
     #         $env:DB_USER/$env:DB_PASSWORD@$env:DB_URL `
     #         @validate_invalid.sql
+
+
+      # =====================================================
+      # Remove Deployment Lock
+      # =====================================================
+
+      - name: Remove Deployment Lock
+        if: success()
+        shell: powershell
+        run: |
+
+          if (Test-Path "deployment.lock") {
+
+            Remove-Item deployment.lock
+
+            Write-Host ""
+            Write-Host "Deployment lock removed."
+          }
+          else {
+
+            Write-Host ""
+            Write-Host "No deployment lock exists."
+          }
