@@ -85,16 +85,17 @@ jobs:
           # Get Changed Files
           # =====================================================
 
-          try {
+          $commitCount = git rev-list --count HEAD
 
-            $changedFiles = git diff --name-only HEAD~1 HEAD
+          if ($commitCount -eq 1) {
 
+            Write-Host "First commit detected."
+
+            $changedFiles = git ls-files
           }
-          catch {
+          else {
 
-            Write-Host "No previous commit found."
-
-            $changedFiles = @()
+            $changedFiles = git diff --name-only HEAD^ HEAD
           }
 
           Write-Host "===== CHANGED FILES ====="
