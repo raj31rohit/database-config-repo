@@ -5,3 +5,4 @@ CREATE TABLE products (
     price NUMBER(10,2),
     created_date DATE DEFAULT SYSDATE
 );
+
