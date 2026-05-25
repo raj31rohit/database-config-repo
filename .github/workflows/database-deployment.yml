@@ -69,62 +69,73 @@ jobs:
         shell: powershell
         run: |
 
-            $manifestPath = "database/app_schema/deployment/manifest.yml"
-            $releaseFile = "release.sql"
+          $manifestPath = "database/app_schema/deployment/manifest.yml"
+          $releaseFile = "release.sql"
 
-            if (Test-Path $releaseFile) {
+          if (Test-Path $releaseFile) {
             Remove-Item $releaseFile
-            }
+          }
 
-            New-Item `
+          New-Item `
             -Path $releaseFile `
             -ItemType File `
             -Force
 
-            # =====================================================
-            # Get Changed Files
-            # =====================================================
+          # =====================================================
+          # Get Changed Files
+          # =====================================================
+
+          try {
 
             $changedFiles = git diff --name-only HEAD~1 HEAD
 
-            Write-Host "===== CHANGED FILES ====="
+          }
+          catch {
 
-            $changedFiles | ForEach-Object {
+            Write-Host "No previous commit found."
+
+            $changedFiles = @()
+          }
+
+          Write-Host "===== CHANGED FILES ====="
+
+          $changedFiles | ForEach-Object {
             Write-Host $_
-            }
+          }
 
-            # =====================================================
-            # Read Manifest
-            # =====================================================
+          # =====================================================
+          # Read Manifest
+          # =====================================================
 
-            $manifestLines = Get-Content $manifestPath
+          $manifestLines = Get-Content $manifestPath
 
-            foreach ($line in $manifestLines) {
+          foreach ($line in $manifestLines) {
 
             if ($line -match "^\s*-\s*(.*)") {
 
-                $manifestFile = $matches[1].Trim()
+              $manifestFile = $matches[1].Trim()
 
-                $fullPath = "database/app_schema/$manifestFile"
+              $fullPath = "database/app_schema/$manifestFile"
 
-                # =====================================================
-                # Include Only Changed Files
-                # =====================================================
+              # =====================================================
+              # Include Only Changed Files
+              # =====================================================
 
-                if ($changedFiles -contains $fullPath) {
+              if ($changedFiles -contains $fullPath) {
 
                 Add-Content `
-                    -Path $releaseFile `
-                    -Value "@@$fullPath"
+                  -Path $releaseFile `
+                  -Value "@@$fullPath"
 
                 Write-Host "Added To release.sql -> $fullPath"
-                }
-             }
+              }
             }
+          }
 
-            Write-Host "===== GENERATED release.sql ====="
+          Write-Host "===== GENERATED release.sql ====="
 
-            Get-Content $releaseFile
+          Get-Content $releaseFile
+
 
     #   - name: Generate release.sql
     #     shell: powershell
