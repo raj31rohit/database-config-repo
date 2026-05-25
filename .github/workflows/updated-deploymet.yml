@@ -106,6 +106,7 @@ jobs:
           Write-Host ""
           Write-Host "No deployment lock found."
 
+
       # =====================================================
       # Validate Structural Object Modifications
       # =====================================================
@@ -134,12 +135,17 @@ jobs:
 
               if ($file -like "*$folder*") {
 
-                git cat-file -e "${{ github.event.before }}:$file" 2>$null
+                # ============================================
+                # Check If File Existed Earlier
+                # ============================================
+
+                git cat-file -e "${{ github.event.before }}:$file" `
+                  2>$null
 
                 $existsInPreviousCommit = ($LASTEXITCODE -eq 0)
 
                 # ============================================
-                # Existing Structural Object Modified
+                # Existing File Modified -> BLOCK
                 # ============================================
 
                 if ($existsInPreviousCommit) {
@@ -154,6 +160,11 @@ jobs:
 
                   exit 1
                 }
+
+                # ============================================
+                # New File -> ALLOW
+                # ============================================
+
                 else {
 
                   Write-Host ""
