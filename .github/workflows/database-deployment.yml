@@ -85,17 +85,17 @@ jobs:
           # Get Changed Files
           # =====================================================
 
-          $commitCount = git rev-list --count HEAD
+          if ("${{ github.event.before }}" -eq "0000000000000000000000000000000000000000") {
 
-          if ($commitCount -eq 1) {
-
-            Write-Host "First commit detected."
+            Write-Host "Initial deployment detected."
 
             $changedFiles = git ls-files
           }
           else {
 
-            $changedFiles = git diff --name-only HEAD^ HEAD
+            $changedFiles = git diff --name-only `
+              ${{ github.event.before }} `
+              ${{ github.sha }}
           }
 
           Write-Host "===== CHANGED FILES ====="
@@ -136,6 +136,78 @@ jobs:
           Write-Host "===== GENERATED release.sql ====="
 
           Get-Content $releaseFile
+
+    #   - name: Generate Differential release.sql
+    #     shell: powershell
+    #     run: |
+
+    #       $manifestPath = "database/app_schema/deployment/manifest.yml"
+    #       $releaseFile = "release.sql"
+
+    #       if (Test-Path $releaseFile) {
+    #         Remove-Item $releaseFile
+    #       }
+
+    #       New-Item `
+    #         -Path $releaseFile `
+    #         -ItemType File `
+    #         -Force
+
+    #       # =====================================================
+    #       # Get Changed Files
+    #       # =====================================================
+
+    #       $commitCount = git rev-list --count HEAD
+
+    #       if ($commitCount -eq 1) {
+
+    #         Write-Host "First commit detected."
+
+    #         $changedFiles = git ls-files
+    #       }
+    #       else {
+
+    #         $changedFiles = git diff --name-only HEAD^ HEAD
+    #       }
+
+    #       Write-Host "===== CHANGED FILES ====="
+
+    #       $changedFiles | ForEach-Object {
+    #         Write-Host $_
+    #       }
+
+    #       # =====================================================
+    #       # Read Manifest
+    #       # =====================================================
+
+    #       $manifestLines = Get-Content $manifestPath
+
+    #       foreach ($line in $manifestLines) {
+
+    #         if ($line -match "^\s*-\s*(.*)") {
+
+    #           $manifestFile = $matches[1].Trim()
+
+    #           $fullPath = "database/app_schema/$manifestFile"
+
+    #           # =====================================================
+    #           # Include Only Changed Files
+    #           # =====================================================
+
+    #           if ($changedFiles -contains $fullPath) {
+
+    #             Add-Content `
+    #               -Path $releaseFile `
+    #               -Value "@@$fullPath"
+
+    #             Write-Host "Added To release.sql -> $fullPath"
+    #           }
+    #         }
+    #       }
+
+    #       Write-Host "===== GENERATED release.sql ====="
+
+    #       Get-Content $releaseFile
 
 
     #   - name: Generate release.sql
