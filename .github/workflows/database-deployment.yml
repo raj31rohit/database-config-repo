@@ -60,6 +60,54 @@ jobs:
             Write-Host "DB_URL missing"
             exit 1
           }
+      # =====================================================
+      # Validate Structural Object Modifications
+      # =====================================================
+      - name: Validate Structural Object Modifications
+        shell: powershell
+        run: |
+
+          $restrictedFolders = @(
+            "tables/",
+            "constraints/",
+            "indexes/",
+            "sequences/"
+          )
+
+          $changedFiles = git diff --name-only `
+            ${{ github.event.before }} `
+            ${{ github.sha }}
+
+          foreach ($file in $changedFiles) {
+
+            foreach ($folder in $restrictedFolders) {
+
+              if ($file -like "*$folder*") {
+
+                # ============================================
+                # Check If File Already Existed
+                # ============================================
+
+                git cat-file -e "${{ github.event.before }}:$file" 2>$null
+
+                if ($LASTEXITCODE -eq 0) {
+
+                  Write-Host ""
+                  Write-Host "ERROR:"
+                  Write-Host "Existing structural object modified -> $file"
+                  Write-Host ""
+                  Write-Host "Do NOT modify deployed structural objects."
+                  Write-Host "Create separate ALTER/change script instead."
+                  Write-Host ""
+
+                  exit 1
+                }
+              }
+            }
+          }
+
+          Write-Host ""
+          Write-Host "Structural object validation successful."
 
       # =====================================================
       # Generate release.sql From manifest.yml
