@@ -107,7 +107,7 @@ jobs:
           Write-Host "No deployment lock found."
 
 
-      # =====================================================
+          # =====================================================
       # Validate Structural Object Modifications
       # =====================================================
 
@@ -176,7 +176,6 @@ jobs:
 
           Write-Host ""
           Write-Host "Structural object validation successful."
-
       # =====================================================
       # Generate release.sql Using Python
       # =====================================================
