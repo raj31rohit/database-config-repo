@@ -10,6 +10,7 @@ deploy_order:
 
   - tables/customers.sql
   - tables/orders.sql
+  - tables/payments.sql
 
   # =====================================================
   # CONSTRAINTS
@@ -54,4 +55,3 @@ deploy_order:
   # - packages/order_pkg_spec.sql
   # - packages/order_pkg_body.sql
 
-  
