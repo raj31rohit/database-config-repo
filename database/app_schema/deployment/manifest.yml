@@ -12,8 +12,10 @@ deploy_order:
   - tables/orders.sql
   - tables/payments.sql
   - tables/shipment.sql
-  - tables/invoices.sql
   - indexes/idx_shipment.sql
+
+  
+  - tables/invoices.sql
   - indexes/idx_invoice_invalid.sql
 
   # =====================================================
