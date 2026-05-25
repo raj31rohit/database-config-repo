@@ -3,3 +3,4 @@ CREATE TABLE customers (
     customer_name VARCHAR2(100),
     created_date DATE DEFAULT SYSDATE
 );
+
