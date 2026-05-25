@@ -2,15 +2,54 @@ schema: APP_SCHEMA
 
 deploy_order:
 
+  # =====================================================
+  # TABLES
+  # =====================================================
   - tables/customer_address.sql
   - tables/products.sql
 
+  - tables/customers.sql
+  - tables/orders.sql
 
-  # - constraints/fk_orders_customer.sql
+  # =====================================================
+  # CONSTRAINTS
+  # =====================================================
 
-  # - indexes/idx_orders_customer.sql
+  - constraints/fk_orders_customer.sql
+
+  # =====================================================
+  # SEQUENCES
+  # =====================================================
+
+  - sequences/seq_order_id.sql
+
+  # =====================================================
+  # TRIGGERS
+  # =====================================================
+
+  - triggers/trg_orders_bi.sql
+
+  # =====================================================
+  # VIEWS
+  # =====================================================
 
   # - views/vw_orders.sql
 
-  # - packages/customer_pkg_spec.sql
-  # - packages/customer_pkg_body.sql
+  # =====================================================
+  # FUNCTIONS
+  # =====================================================
+
+  # - functions/get_customer_name.sql
+
+  # =====================================================
+  # PROCEDURES
+  # =====================================================
+
+  # - procedures/load_orders.sql
+
+  # =====================================================
+  # PACKAGES
+  # =====================================================
+
+  # - packages/order_pkg_spec.sql
+  # - packages/order_pkg_body.sql
