@@ -65,39 +65,100 @@ jobs:
       # Generate release.sql From manifest.yml
       # =====================================================
 
-      - name: Generate release.sql
+      - name: Generate Differential release.sql
         shell: powershell
         run: |
 
-          $manifestPath = "database/app_schema/deployment/manifest.yml"
-          $releaseFile = "release.sql"
+            $manifestPath = "database/app_schema/deployment/manifest.yml"
+            $releaseFile = "release.sql"
 
-          if (Test-Path $releaseFile) {
+            if (Test-Path $releaseFile) {
             Remove-Item $releaseFile
-          }
+            }
 
-          New-Item `
+            New-Item `
             -Path $releaseFile `
             -ItemType File `
             -Force
 
-          $lines = Get-Content $manifestPath
+            # =====================================================
+            # Get Changed Files
+            # =====================================================
 
-          foreach ($line in $lines) {
+            $changedFiles = git diff --name-only HEAD~1 HEAD
+
+            Write-Host "===== CHANGED FILES ====="
+
+            $changedFiles | ForEach-Object {
+            Write-Host $_
+            }
+
+            # =====================================================
+            # Read Manifest
+            # =====================================================
+
+            $manifestLines = Get-Content $manifestPath
+
+            foreach ($line in $manifestLines) {
 
             if ($line -match "^\s*-\s*(.*)") {
 
-              $file = $matches[1].Trim()
+                $manifestFile = $matches[1].Trim()
 
-              Add-Content `
-                -Path $releaseFile `
-                -Value "@@database/app_schema/$file"
+                $fullPath = "database/app_schema/$manifestFile"
+
+                # =====================================================
+                # Include Only Changed Files
+                # =====================================================
+
+                if ($changedFiles -contains $fullPath) {
+
+                Add-Content `
+                    -Path $releaseFile `
+                    -Value "@@$fullPath"
+
+                Write-Host "Added To release.sql -> $fullPath"
+                }
+             }
             }
-          }
 
-          Write-Host "===== GENERATED release.sql ====="
+            Write-Host "===== GENERATED release.sql ====="
 
-          Get-Content $releaseFile
+            Get-Content $releaseFile
+
+    #   - name: Generate release.sql
+    #     shell: powershell
+    #     run: |
+
+    #       $manifestPath = "database/app_schema/deployment/manifest.yml"
+    #       $releaseFile = "release.sql"
+
+    #       if (Test-Path $releaseFile) {
+    #         Remove-Item $releaseFile
+    #       }
+
+    #       New-Item `
+    #         -Path $releaseFile `
+    #         -ItemType File `
+    #         -Force
+
+    #       $lines = Get-Content $manifestPath
+
+    #       foreach ($line in $lines) {
+
+    #         if ($line -match "^\s*-\s*(.*)") {
+
+    #           $file = $matches[1].Trim()
+
+    #           Add-Content `
+    #             -Path $releaseFile `
+    #             -Value "@@database/app_schema/$file"
+    #         }
+    #       }
+
+    #       Write-Host "===== GENERATED release.sql ====="
+
+    #       Get-Content $releaseFile
 
       # =====================================================
       # Execute Deployment
