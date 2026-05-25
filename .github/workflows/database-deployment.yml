@@ -61,31 +61,7 @@ jobs:
             exit 1
           }
 
-      # =====================================================
-      # Check Deployment Lock
-      # =====================================================
 
-      - name: Check Deployment Lock
-        shell: powershell
-        run: |
-
-          if (Test-Path "deployment.lock") {
-
-            Write-Host ""
-            Write-Host "================================================="
-            Write-Host "DEPLOYMENT LOCK DETECTED"
-            Write-Host "================================================="
-            Write-Host ""
-            Write-Host "Previous deployment failed."
-            Write-Host "Partial deployment may exist."
-            Write-Host ""
-            Write-Host "Fix deployment issue before new deployment."
-            Write-Host ""
-
-            exit 1
-          }
-
-          Write-Host "No deployment lock found."
 
       # =====================================================
       # Validate Structural Object Modifications
@@ -381,7 +357,7 @@ jobs:
 
           Write-Host ""
           Write-Host "Deployment lock created."
-
+          
       # # =====================================================
       # # Execute Deployment
       # # =====================================================
@@ -449,26 +425,3 @@ jobs:
     #         -s `
     #         $env:DB_USER/$env:DB_PASSWORD@$env:DB_URL `
     #         @validate_invalid.sql
-
-
-      # =====================================================
-      # Remove Deployment Lock
-      # =====================================================
-
-      - name: Remove Deployment Lock
-        if: success()
-        shell: powershell
-        run: |
-
-          if (Test-Path "deployment.lock") {
-
-            Remove-Item deployment.lock
-
-            Write-Host ""
-            Write-Host "Deployment lock removed."
-          }
-          else {
-
-            Write-Host ""
-            Write-Host "No deployment lock exists."
-          }
