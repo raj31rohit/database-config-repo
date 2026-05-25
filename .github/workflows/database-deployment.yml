@@ -307,6 +307,37 @@ jobs:
 
     #       Get-Content $releaseFile
 
+          # =====================================================
+      # Check Deployment Lock
+      # =====================================================
+
+      - name: Check Deployment Lock
+        shell: powershell
+        run: |
+
+          $branch = "${{ github.ref_name }}"
+
+          $result = aws dynamodb get-item `
+            --table-name deployment_lock `
+            --key "{\""branch_name\"": {\""S\"": \""$branch\""}}"
+
+          Write-Host $result
+
+          if ($result -match "LOCKED") {
+
+            Write-Host ""
+            Write-Host "================================================="
+            Write-Host "DEPLOYMENT LOCK DETECTED"
+            Write-Host "================================================="
+            Write-Host ""
+            Write-Host "Previous deployment failed."
+            Write-Host "Manual intervention required."
+            Write-Host ""
+
+            exit 1
+          }
+
+          Write-Host "No deployment lock found."
 
       # =====================================================
       # Execute Deployment
@@ -369,6 +400,29 @@ jobs:
 
           Write-Host ""
           Write-Host "Deployment lock created."
+
+          # =====================================================
+      # Create Deployment Lock
+      # =====================================================
+
+      - name: Create Deployment Lock
+        if: failure()
+        shell: powershell
+        run: |
+
+          $branch = "${{ github.ref_name }}"
+
+          aws dynamodb put-item `
+            --table-name deployment_lock `
+            --item "{
+              \""branch_name\"": {\""S\"": \""$branch\""},
+              \""lock_status\"": {\""S\"": \""LOCKED\""},
+              \""failed_commit\"": {\""S\"": \""${{ github.sha }}\""},
+              \""workflow\"": {\""S\"": \""${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\""}
+            }"
+
+          Write-Host ""
+          Write-Host "Deployment lock created in DynamoDB."
           
       # # =====================================================
       # # Execute Deployment
