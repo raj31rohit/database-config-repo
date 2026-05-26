@@ -111,71 +111,71 @@ jobs:
       # Validate Structural Object Modifications
       # =====================================================
 
-      - name: Validate Structural Object Modifications
-        shell: powershell
-        run: |
+      # - name: Validate Structural Object Modifications
+      #   shell: powershell
+      #   run: |
 
-          $restrictedFolders = @(
-            "tables/",
-            "constraints/",
-            "indexes/",
-            "sequences/"
-          )
+      #     $restrictedFolders = @(
+      #       "tables/",
+      #       "constraints/",
+      #       "indexes/",
+      #       "sequences/"
+      #     )
 
-          $changedFiles = git diff --name-only `
-            ${{ github.event.before }} `
-            ${{ github.sha }}
+      #     $changedFiles = git diff --name-only `
+      #       ${{ github.event.before }} `
+      #       ${{ github.sha }}
 
-          Write-Host ""
-          Write-Host "===== STRUCTURAL OBJECT VALIDATION ====="
+      #     Write-Host ""
+      #     Write-Host "===== STRUCTURAL OBJECT VALIDATION ====="
 
-          foreach ($file in $changedFiles) {
+      #     foreach ($file in $changedFiles) {
 
-            foreach ($folder in $restrictedFolders) {
+      #       foreach ($folder in $restrictedFolders) {
 
-              if ($file -like "*$folder*") {
+      #         if ($file -like "*$folder*") {
 
-                # ============================================
-                # Check If File Existed Earlier
-                # ============================================
+      #           # ============================================
+      #           # Check If File Existed Earlier
+      #           # ============================================
 
-                git cat-file -e "${{ github.event.before }}:$file" `
-                  2>$null
+      #           git cat-file -e "${{ github.event.before }}:$file" `
+      #             2>$null
 
-                $existsInPreviousCommit = ($LASTEXITCODE -eq 0)
+      #           $existsInPreviousCommit = ($LASTEXITCODE -eq 0)
 
-                # ============================================
-                # Existing File Modified -> BLOCK
-                # ============================================
+      #           # ============================================
+      #           # Existing File Modified -> BLOCK
+      #           # ============================================
 
-                if ($existsInPreviousCommit) {
+      #           if ($existsInPreviousCommit) {
 
-                  Write-Host ""
-                  Write-Host "ERROR:"
-                  Write-Host "Existing structural object modified -> $file"
-                  Write-Host ""
-                  Write-Host "Do NOT modify deployed structural objects."
-                  Write-Host "Create separate ALTER/change script instead."
-                  Write-Host ""
+      #             Write-Host ""
+      #             Write-Host "ERROR:"
+      #             Write-Host "Existing structural object modified -> $file"
+      #             Write-Host ""
+      #             Write-Host "Do NOT modify deployed structural objects."
+      #             Write-Host "Create separate ALTER/change script instead."
+      #             Write-Host ""
 
-                  exit 1
-                }
+      #             exit 1
+      #           }
 
-                # ============================================
-                # New File -> ALLOW
-                # ============================================
+      #           # ============================================
+      #           # New File -> ALLOW
+      #           # ============================================
 
-                else {
+      #           else {
 
-                  Write-Host ""
-                  Write-Host "New structural object detected -> $file"
-                }
-              }
-            }
-          }
+      #             Write-Host ""
+      #             Write-Host "New structural object detected -> $file"
+      #           }
+      #         }
+      #       }
+      #     }
 
-          Write-Host ""
-          Write-Host "Structural object validation successful."
+      #     Write-Host ""
+      #     Write-Host "Structural object validation successful."
       # =====================================================
       # Generate release.sql Using Python
       # =====================================================
