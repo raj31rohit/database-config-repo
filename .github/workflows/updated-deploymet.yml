@@ -180,16 +180,31 @@ jobs:
       # Generate release.sql Using Python
       # =====================================================
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-
       - name: Generate release.sql
         shell: powershell
         run: |
 
-          python database/app_schema/scripts/generate_release.py
+          $pythonCandidates = @(
+            "C:\Users\Lenovo\AppData\Local\Microsoft\WindowsApps\python.exe",
+            "C:\Users\Lenovo\AppData\Local\Python\bin\python.exe"
+          )
+
+          $pythonPath = $null
+
+          foreach ($candidate in $pythonCandidates) {
+            if (Test-Path $candidate) {
+              $pythonPath = $candidate
+              break
+            }
+          }
+
+          if (-not $pythonPath) {
+            throw "Python executable was not found. Checked: $($pythonCandidates -join ', ')"
+          }
+
+          Write-Host "Using Python: $pythonPath"
+
+          & $pythonPath database/app_schema/scripts/generate_release.py
 
           Write-Host ""
           Write-Host "===== GENERATED release.sql ====="
