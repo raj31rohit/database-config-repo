@@ -180,22 +180,33 @@ jobs:
       # Generate release.sql Using Python
       # =====================================================
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.14.3'
+      # - name: Set up Python
+      #   uses: actions/setup-python@v5
+      #   with:
+      #     python-version: '3.13'
+
+      # - name: Generate release.sql
+      #   shell: powershell
+      #   run: |
+
+      #     python database/app_schema/scripts/generate_release.py
+
+      #     Write-Host ""
+      #     Write-Host "===== GENERATED release.sql ====="
+
+      #     Get-Content release.sql
 
       - name: Generate release.sql
         shell: powershell
         run: |
 
-          python database/app_schema/scripts/generate_release.py
+          & "C:\Users\Lenovo\AppData\Local\Python\pythoncore-3.14-64\python.exe" `
+            database/app_schema/scripts/generate_release.py
 
           Write-Host ""
           Write-Host "===== GENERATED release.sql ====="
 
           Get-Content release.sql
-
       # =====================================================
       # Execute Deployment
       # =====================================================
