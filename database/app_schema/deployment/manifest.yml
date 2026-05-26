@@ -15,6 +15,7 @@ deploy_order:
   - tables/shipment.sql
   - indexes/idx_shipment.sql
 
+
   
   - tables/invoices.sql
   - indexes/idx_invoice_invalid.sql
