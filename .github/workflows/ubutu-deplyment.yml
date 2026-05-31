@@ -280,55 +280,38 @@ jobs:
       shell: bash
       run: |
 
-        manifestPath="database/app_schema/deployment/manifest.yml"
-        releaseFile="release.sql"
-
-        rm -f "$releaseFile"
-
-        touch "$releaseFile"
-
-        changedFiles=$(git diff --name-only \
-          "${{ github.event.before }}" \
-          "${{ github.sha }}")
-
-        while IFS= read -r line; do
-
-          if [[ "$line" =~ ^[[:space:]]*-[[:space:]]*(.*) ]]; then
-
-            manifestFile="${BASH_REMATCH[1]}"
-
-            fullPath="database/app_schema/$manifestFile"
-
-            if grep -Fxq "$fullPath" <<< "$changedFiles"; then
-
-              echo "@@$fullPath" >> "$releaseFile"
-
-              echo "Added -> $fullPath"
-
-            fi
-          fi
-
-        done < "$manifestPath"
-
-        echo ""
-        echo "===== GENERATED release.sql ====="
-
-        cat "$releaseFile"
-
-    # =====================================================
-    # Execute Deployment
-    # =====================================================
-
-    - name: Generate Differential release.sql
-      shell: bash
-      run: |
-
         python3 database/app_schema/scripts/generate_release.py
 
         echo ""
         echo "===== GENERATED release.sql ====="
 
         cat release.sql
+
+    # =====================================================
+    # Execute Deployment
+    # =====================================================
+
+    - name: Execute release.sql
+      shell: bash
+      run: |
+
+        cat > run_release.sql <<EOF
+        CONNECT $DB_USER/$DB_PASSWORD@$DB_CONNECT
+
+        SET ECHO ON
+        SET SERVEROUTPUT ON
+
+        @release.sql
+
+        EXIT;
+        EOF
+
+        echo ""
+        echo "===== run_release.sql ====="
+
+        cat run_release.sql
+
+        sqlplus /nolog @run_release.sql
 
     # =====================================================
     # Create Deployment Lock
@@ -352,27 +335,7 @@ jobs:
 
         echo "Deployment lock created."
           
-      # # =====================================================
-      # # Execute Deployment
-      # # =====================================================
-
-      # - name: Execute release.sql
-      #   shell: powershell
-      #   run: |
-
-      #       @"
-      #       CONNECT $env:DB_USER/$env:DB_PASSWORD@$env:DB_CONNECT
-
-      #       @release.sql
-
-      #       EXIT;
-      #       "@ | Out-File run_release.sql -Encoding ascii
-
-      #       Write-Host "===== run_release.sql ====="
-
-      #       Get-Content run_release.sql
-
-      #       sqlplus /nolog "@run_release.sql"
+  
 
       # =====================================================
       # Compile Invalid Objects
