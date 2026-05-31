@@ -319,27 +319,16 @@ jobs:
     # Execute Deployment
     # =====================================================
 
-    - name: Execute release.sql
-      shell: bash
-      run: |
+- name: Generate Differential release.sql
+  shell: bash
+  run: |
 
-        cat > run_release.sql <<EOF
-        CONNECT $DB_USER/$DB_PASSWORD@$DB_CONNECT
+    python3 database/app_schema/scripts/generate_release.py
 
-        SET ECHO ON
-        SET SERVEROUTPUT ON
+    echo ""
+    echo "===== GENERATED release.sql ====="
 
-        @release.sql
-
-        EXIT;
-        EOF
-
-        echo ""
-        echo "===== run_release.sql ====="
-
-        cat run_release.sql
-
-        sqlplus /nolog @run_release.sql
+    cat release.sql
 
     # =====================================================
     # Create Deployment Lock
