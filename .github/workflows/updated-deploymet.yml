@@ -1,441 +1,314 @@
-# name: DB Deployment
-
-# on:
-#   push:
-#     branches:
-#       - develop
-#       - qa
-#       - main
-
-# permissions:
-#   contents: read
-#   id-token: write
-
-# jobs:
-
-#   deploy-db:
-
-#     runs-on: self-hosted
-
-#     environment: PROD
-
-#     env:
-#       DB_URL: ${{ secrets.DB_URL }}
-#       DB_USER: ${{ secrets.DB_USER }}
-#       DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-#       DB_CONNECT: "localhost:1521/XEPDB1"
-
-#     steps:
-
-#       # =====================================================
-#       # Checkout Repository
-#       # =====================================================
-
-#       - name: Checkout Repository
-#         uses: actions/checkout@v4
-#         with:
-#           fetch-depth: 0
-
-#       # =====================================================
-#       # Configure AWS Credentials
-#       # =====================================================
-
-#       # - name: Configure AWS credentials using GitHub OIDC
-#       #   uses: aws-actions/configure-aws-credentials@v3
-#       #   with:
-#       #     role-to-assume: arn:aws:iam::054276329279:role/github-actions-oidc-role
-#       #     aws-region: us-east-1
-
-#       # =====================================================
-#       # Debug Environment
-#       # =====================================================
-
-#       - name: Debug Environment Selection
-#         shell: powershell
-#         run: |
-
-#           Write-Host ""
-#           Write-Host "================================================="
-#           Write-Host "ENVIRONMENT DETAILS"
-#           Write-Host "================================================="
-
-#           Write-Host "Branch Name = ${{ github.ref_name }}"
-
-#           if ($env:DB_URL) {
-#             Write-Host "DB_URL exists"
-#           }
-#           else {
-#             Write-Host "DB_URL missing"
-#             exit 1
-#           }
-
-#       # # =====================================================
-#       # # Check Deployment Lock
-#       # # =====================================================
-
-#       # - name: Check Deployment Lock
-#       #   shell: powershell
-#       #   run: |
-
-#       #     $branch = "${{ github.ref_name }}"
-
-#       #     $result = aws dynamodb get-item `
-#       #       --table-name deployment_lock `
-#       #       --key "{\""branch_name\"": {\""S\"": \""$branch\""}}"
-
-#       #     Write-Host ""
-#       #     Write-Host "===== DEPLOYMENT LOCK STATUS ====="
-
-#       #     Write-Host $result
-
-#       #     if ($result -match "LOCKED") {
-
-#       #       Write-Host ""
-#       #       Write-Host "================================================="
-#       #       Write-Host "DEPLOYMENT LOCK DETECTED"
-#       #       Write-Host "================================================="
-#       #       Write-Host ""
-#       #       Write-Host "Previous deployment failed."
-#       #       Write-Host "Partial deployment may exist."
-#       #       Write-Host "Manual intervention required."
-#       #       Write-Host ""
-
-#       #       exit 1
-#       #     }
-
-#       #     Write-Host ""
-#       #     Write-Host "No deployment lock found."
-
-
-#           # =====================================================
-#       # Validate Structural Object Modifications
-#       # =====================================================
-
-#       # - name: Validate Structural Object Modifications
-#       #   shell: powershell
-#       #   run: |
-
-#       #     $restrictedFolders = @(
-#       #       "tables/",
-#       #       "constraints/",
-#       #       "indexes/",
-#       #       "sequences/"
-#       #     )
-
-#       #     $changedFiles = git diff --name-only `
-#       #       ${{ github.event.before }} `
-#       #       ${{ github.sha }}
-
-#       #     Write-Host ""
-#       #     Write-Host "===== STRUCTURAL OBJECT VALIDATION ====="
-
-#       #     foreach ($file in $changedFiles) {
-
-#       #       foreach ($folder in $restrictedFolders) {
-
-#       #         if ($file -like "*$folder*") {
-
-#       #           # ============================================
-#       #           # Check If File Existed Earlier
-#       #           # ============================================
-
-#       #           git cat-file -e "${{ github.event.before }}:$file" `
-#       #             2>$null
-
-#       #           $existsInPreviousCommit = ($LASTEXITCODE -eq 0)
-
-#       #           # ============================================
-#       #           # Existing File Modified -> BLOCK
-#       #           # ============================================
-
-#       #           if ($existsInPreviousCommit) {
-
-#       #             Write-Host ""
-#       #             Write-Host "ERROR:"
-#       #             Write-Host "Existing structural object modified -> $file"
-#       #             Write-Host ""
-#       #             Write-Host "Do NOT modify deployed structural objects."
-#       #             Write-Host "Create separate ALTER/change script instead."
-#       #             Write-Host ""
-
-#       #             exit 1
-#       #           }
-
-#       #           # ============================================
-#       #           # New File -> ALLOW
-#       #           # ============================================
-
-#       #           else {
-
-#       #             Write-Host ""
-#       #             Write-Host "New structural object detected -> $file"
-#       #           }
-#       #         }
-#       #       }
-#       #     }
-
-#       #     Write-Host ""
-#       #     Write-Host "Structural object validation successful."
-#       # =====================================================
-#       # Generate release.sql Using Python
-#       # =====================================================
-
-#       - name: Generate release.sql
-#         shell: powershell
-#         run: |
-
-#           $pythonCandidates = @(
-#             "C:\Users\Lenovo\AppData\Local\Microsoft\WindowsApps\python.exe",
-#             "C:\Users\Lenovo\AppData\Local\Python\bin\python.exe"
-#           )
-
-#           $pythonPath = $null
-
-#           foreach ($candidate in $pythonCandidates) {
-#             if (Test-Path $candidate) {
-#               $pythonPath = $candidate
-#               break
-#             }
-#           }
-
-#           if (-not $pythonPath) {
-#             throw "Python executable was not found. Checked: $($pythonCandidates -join ', ')"
-#           }
-
-#           Write-Host "Using Python: $pythonPath"
-
-#           & $pythonPath database/app_schema/scripts/generate_release.py
-
-#           Write-Host ""
-#           Write-Host "===== GENERATED release.sql ====="
-
-#           Get-Content release.sql
-
-#       # =====================================================
-#       # Execute Deployment
-#       # =====================================================
-
-#       - name: Execute release.sql
-#         shell: powershell
-#         run: |
-
-#           @"
-#           CONNECT $env:DB_USER/$env:DB_PASSWORD@$env:DB_CONNECT
-
-#           SET ECHO ON
-#           SET SERVEROUTPUT ON
-
-#           @release.sql
-
-#           EXIT;
-#           "@ | Out-File run_release.sql -Encoding ascii
-
-#           Write-Host ""
-#           Write-Host "===== run_release.sql ====="
-
-#           Get-Content run_release.sql
-
-#           sqlplus /nolog "@run_release.sql"
-
-#       # =====================================================
-#       # Create Deployment Lock On Failure
-#       # =====================================================
-
-#       # - name: Create Deployment Lock
-#       #   if: failure()
-#       #   shell: powershell
-#       #   run: |
-
-#       #     $branch = "${{ github.ref_name }}"
-
-#       #     Write-Host ""
-#       #     Write-Host "================================================="
-#       #     Write-Host "CREATING DEPLOYMENT LOCK"
-#       #     Write-Host "================================================="
-
-#       #     aws dynamodb put-item `
-#       #       --table-name deployment_lock `
-#       #       --item "{
-#       #         \""branch_name\"": {\""S\"": \""$branch\""},
-#       #         \""lock_status\"": {\""S\"": \""LOCKED\""},
-#       #         \""failed_commit\"": {\""S\"": \""${{ github.sha }}\""},
-#       #         \""workflow_url\"": {\""S\"": \""${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\""}
-#       #       }"
-
-#       #     Write-Host ""
-#       #     Write-Host "Deployment lock created in DynamoDB."
-
-#     #   # =====================================================
-#     #   # Compile Invalid Objects
-#     #   # =====================================================
-
-#     #   - name: Compile Invalid Objects
-#     #     shell: powershell
-#     #     run: |
-
-#     #       @"
-#     #       CONNECT $env:DB_USER/$env:DB_PASSWORD@$env:DB_CONNECT
-
-#     #       BEGIN
-
-#     #         DBMS_UTILITY.compile_schema(
-#     #           schema => 'APP_SCHEMA'
-#     #         );
-
-#     #       END;
-#     #       /
-
-#     #       EXIT;
-#     #       "@ | Out-File compile.sql -Encoding ascii
-
-#     #       sqlplus /nolog "@compile.sql"
-
-#     #   # =====================================================
-#     #   # Validate Invalid Objects
-#     #   # =====================================================
-
-#     #   - name: Validate Invalid Objects
-#     #     shell: powershell
-#     #     run: |
-
-#     #       @"
-#     #       CONNECT $env:DB_USER/$env:DB_PASSWORD@$env:DB_CONNECT
-
-#     #       SET HEADING OFF;
-#     #       SET FEEDBACK OFF;
-
-#     #       SELECT object_name || ' - ' || object_type
-#     #       FROM user_objects
-#     #       WHERE status = 'INVALID';
-
-#     #       EXIT;
-#     #       "@ | Out-File validate_invalid.sql -Encoding ascii
-
-#     #       sqlplus /nolog "@validate_invalid.sql"
-
-
-name: Test Oracle Connection
+name: DB Deployment
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - develop
+      - qa
+      - main
+
+permissions:
+  contents: read
+  id-token: write
 
 jobs:
 
-  test-db:
+  deploy-db:
 
     runs-on: self-hosted
 
+    environment: PROD
+
     env:
-      DB_USER: APP_USER
-      DB_PASSWORD: app123
-      DB_CONNECT: oracle-xe:1521/XEPDB1
+      DB_URL: ${{ secrets.DB_URL }}
+      DB_USER: ${{ secrets.DB_USER }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      DB_CONNECT: "localhost:1521/XEPDB1"
 
     steps:
 
-    # =====================================================
-    # Restore Oracle Cache
-    # =====================================================
+      # =====================================================
+      # Checkout Repository
+      # =====================================================
 
-    - name: Restore Oracle Instant Client Cache
-      id: oracle-cache
-      uses: actions/cache@v4
-      with:
-        path: $HOME/oracle
-        key: oracle-instantclient-21.9
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    # =====================================================
-    # Install Oracle Instant Client
-    # =====================================================
+      # =====================================================
+      # Configure AWS Credentials
+      # =====================================================
 
-    - name: Install Oracle Instant Client
-      if: steps.oracle-cache.outputs.cache-hit != 'true'
-      shell: bash
-      run: |
+      # - name: Configure AWS credentials using GitHub OIDC
+      #   uses: aws-actions/configure-aws-credentials@v3
+      #   with:
+      #     role-to-assume: arn:aws:iam::054276329279:role/github-actions-oidc-role
+      #     aws-region: us-east-1
 
-        sudo apt-get update
+      # =====================================================
+      # Debug Environment
+      # =====================================================
 
-        sudo apt-get install -y \
-          unzip \
-          curl \
-          libaio1
+      - name: Debug Environment Selection
+        shell: powershell
+        run: |
 
-        mkdir -p $HOME/oracle
+          Write-Host ""
+          Write-Host "================================================="
+          Write-Host "ENVIRONMENT DETAILS"
+          Write-Host "================================================="
 
-        cd /tmp
+          Write-Host "Branch Name = ${{ github.ref_name }}"
 
-        curl -L \
-          -o basiclite.zip \
-          https://download.oracle.com/otn_software/linux/instantclient/219000/instantclient-basiclite-linux.x64-21.9.0.0.0dbru.zip
+          if ($env:DB_URL) {
+            Write-Host "DB_URL exists"
+          }
+          else {
+            Write-Host "DB_URL missing"
+            exit 1
+          }
 
-        curl -L \
-          -o sqlplus.zip \
-          https://download.oracle.com/otn_software/linux/instantclient/219000/instantclient-sqlplus-linux.x64-21.9.0.0.0dbru.zip
+      # # =====================================================
+      # # Check Deployment Lock
+      # # =====================================================
 
-        unzip -o basiclite.zip -d $HOME/oracle
-        unzip -o sqlplus.zip -d $HOME/oracle
+      # - name: Check Deployment Lock
+      #   shell: powershell
+      #   run: |
 
-    # =====================================================
-    # Configure Oracle Environment
-    # =====================================================
+      #     $branch = "${{ github.ref_name }}"
 
-    - name: Configure Oracle Environment
-      shell: bash
-      run: |
+      #     $result = aws dynamodb get-item `
+      #       --table-name deployment_lock `
+      #       --key "{\""branch_name\"": {\""S\"": \""$branch\""}}"
 
-        echo "$HOME/oracle/instantclient_21_9" >> $GITHUB_PATH
-        echo "LD_LIBRARY_PATH=$HOME/oracle/instantclient_21_9" >> $GITHUB_ENV
+      #     Write-Host ""
+      #     Write-Host "===== DEPLOYMENT LOCK STATUS ====="
 
-    # =====================================================
-    # Verify SQLPlus
-    # =====================================================
+      #     Write-Host $result
 
-    - name: Verify SQLPlus
-      shell: bash
-      run: |
+      #     if ($result -match "LOCKED") {
 
-        export PATH="$HOME/oracle/instantclient_21_9:$PATH"
-        export LD_LIBRARY_PATH="$HOME/oracle/instantclient_21_9"
+      #       Write-Host ""
+      #       Write-Host "================================================="
+      #       Write-Host "DEPLOYMENT LOCK DETECTED"
+      #       Write-Host "================================================="
+      #       Write-Host ""
+      #       Write-Host "Previous deployment failed."
+      #       Write-Host "Partial deployment may exist."
+      #       Write-Host "Manual intervention required."
+      #       Write-Host ""
 
-        sqlplus -V
+      #       exit 1
+      #     }
 
-    # =====================================================
-    # Test DNS Resolution
-    # =====================================================
+      #     Write-Host ""
+      #     Write-Host "No deployment lock found."
 
-    - name: Verify Oracle Container Resolution
-      shell: bash
-      run: |
 
-        getent hosts oracle-xe || true
+          # =====================================================
+      # Validate Structural Object Modifications
+      # =====================================================
 
-        ping -c 3 oracle-xe || true
+      # - name: Validate Structural Object Modifications
+      #   shell: powershell
+      #   run: |
 
-    # =====================================================
-    # Test Oracle Login
-    # =====================================================
+      #     $restrictedFolders = @(
+      #       "tables/",
+      #       "constraints/",
+      #       "indexes/",
+      #       "sequences/"
+      #     )
 
-    - name: Verify Oracle Login
-      shell: bash
-      run: |
+      #     $changedFiles = git diff --name-only `
+      #       ${{ github.event.before }} `
+      #       ${{ github.sha }}
 
-        export PATH="$HOME/oracle/instantclient_21_9:$PATH"
-        export LD_LIBRARY_PATH="$HOME/oracle/instantclient_21_9"
+      #     Write-Host ""
+      #     Write-Host "===== STRUCTURAL OBJECT VALIDATION ====="
 
-        cat > verify_user.sql <<EOF
-        CONNECT $DB_USER/$DB_PASSWORD@$DB_CONNECT
+      #     foreach ($file in $changedFiles) {
 
-        PROMPT
-        PROMPT ===== CONNECTED USER =====
+      #       foreach ($folder in $restrictedFolders) {
 
-        SELECT USER FROM DUAL;
+      #         if ($file -like "*$folder*") {
 
-        PROMPT
-        PROMPT ===== DATABASE =====
+      #           # ============================================
+      #           # Check If File Existed Earlier
+      #           # ============================================
 
-        SELECT SYS_CONTEXT('USERENV','DB_NAME')
-        FROM DUAL;
+      #           git cat-file -e "${{ github.event.before }}:$file" `
+      #             2>$null
 
-        EXIT;
-        EOF
+      #           $existsInPreviousCommit = ($LASTEXITCODE -eq 0)
 
-        sqlplus /nolog @verify_user.sql
+      #           # ============================================
+      #           # Existing File Modified -> BLOCK
+      #           # ============================================
+
+      #           if ($existsInPreviousCommit) {
+
+      #             Write-Host ""
+      #             Write-Host "ERROR:"
+      #             Write-Host "Existing structural object modified -> $file"
+      #             Write-Host ""
+      #             Write-Host "Do NOT modify deployed structural objects."
+      #             Write-Host "Create separate ALTER/change script instead."
+      #             Write-Host ""
+
+      #             exit 1
+      #           }
+
+      #           # ============================================
+      #           # New File -> ALLOW
+      #           # ============================================
+
+      #           else {
+
+      #             Write-Host ""
+      #             Write-Host "New structural object detected -> $file"
+      #           }
+      #         }
+      #       }
+      #     }
+
+      #     Write-Host ""
+      #     Write-Host "Structural object validation successful."
+      # =====================================================
+      # Generate release.sql Using Python
+      # =====================================================
+
+      - name: Generate release.sql
+        shell: powershell
+        run: |
+
+          $pythonCandidates = @(
+            "C:\Users\Lenovo\AppData\Local\Microsoft\WindowsApps\python.exe",
+            "C:\Users\Lenovo\AppData\Local\Python\bin\python.exe"
+          )
+
+          $pythonPath = $null
+
+          foreach ($candidate in $pythonCandidates) {
+            if (Test-Path $candidate) {
+              $pythonPath = $candidate
+              break
+            }
+          }
+
+          if (-not $pythonPath) {
+            throw "Python executable was not found. Checked: $($pythonCandidates -join ', ')"
+          }
+
+          Write-Host "Using Python: $pythonPath"
+
+          & $pythonPath database/app_schema/scripts/generate_release.py
+
+          Write-Host ""
+          Write-Host "===== GENERATED release.sql ====="
+
+          Get-Content release.sql
+
+      # =====================================================
+      # Execute Deployment
+      # =====================================================
+
+      - name: Execute release.sql
+        shell: powershell
+        run: |
+
+          @"
+          CONNECT $env:DB_USER/$env:DB_PASSWORD@$env:DB_CONNECT
+
+          SET ECHO ON
+          SET SERVEROUTPUT ON
+
+          @release.sql
+
+          EXIT;
+          "@ | Out-File run_release.sql -Encoding ascii
+
+          Write-Host ""
+          Write-Host "===== run_release.sql ====="
+
+          Get-Content run_release.sql
+
+          sqlplus /nolog "@run_release.sql"
+
+      # =====================================================
+      # Create Deployment Lock On Failure
+      # =====================================================
+
+      # - name: Create Deployment Lock
+      #   if: failure()
+      #   shell: powershell
+      #   run: |
+
+      #     $branch = "${{ github.ref_name }}"
+
+      #     Write-Host ""
+      #     Write-Host "================================================="
+      #     Write-Host "CREATING DEPLOYMENT LOCK"
+      #     Write-Host "================================================="
+
+      #     aws dynamodb put-item `
+      #       --table-name deployment_lock `
+      #       --item "{
+      #         \""branch_name\"": {\""S\"": \""$branch\""},
+      #         \""lock_status\"": {\""S\"": \""LOCKED\""},
+      #         \""failed_commit\"": {\""S\"": \""${{ github.sha }}\""},
+      #         \""workflow_url\"": {\""S\"": \""${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\""}
+      #       }"
+
+      #     Write-Host ""
+      #     Write-Host "Deployment lock created in DynamoDB."
+
+    #   # =====================================================
+    #   # Compile Invalid Objects
+    #   # =====================================================
+
+    #   - name: Compile Invalid Objects
+    #     shell: powershell
+    #     run: |
+
+    #       @"
+    #       CONNECT $env:DB_USER/$env:DB_PASSWORD@$env:DB_CONNECT
+
+    #       BEGIN
+
+    #         DBMS_UTILITY.compile_schema(
+    #           schema => 'APP_SCHEMA'
+    #         );
+
+    #       END;
+    #       /
+
+    #       EXIT;
+    #       "@ | Out-File compile.sql -Encoding ascii
+
+    #       sqlplus /nolog "@compile.sql"
+
+    #   # =====================================================
+    #   # Validate Invalid Objects
+    #   # =====================================================
+
+    #   - name: Validate Invalid Objects
+    #     shell: powershell
+    #     run: |
+
+    #       @"
+    #       CONNECT $env:DB_USER/$env:DB_PASSWORD@$env:DB_CONNECT
+
+    #       SET HEADING OFF;
+    #       SET FEEDBACK OFF;
+
+    #       SELECT object_name || ' - ' || object_type
+    #       FROM user_objects
+    #       WHERE status = 'INVALID';
+
+    #       EXIT;
+    #       "@ | Out-File validate_invalid.sql -Encoding ascii
+
+    #       sqlplus /nolog "@validate_invalid.sql"
