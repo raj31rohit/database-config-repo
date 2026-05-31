@@ -20,7 +20,7 @@ jobs:
     environment: PROD
 
     env:
-        DB_URL: jdbc:oracle:thin:@oracle-xe:1521/XEPDB1
+        DB_URL: jdbc:oracle:thin:@dev-network:1521/XEPDB1
         DB_USER: APP_USER
         DB_PASSWORD: app123
             # env:
