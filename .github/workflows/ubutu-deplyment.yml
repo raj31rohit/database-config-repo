@@ -122,6 +122,20 @@ jobs:
         echo "Cache Hit = ${{ steps.oracle-cache.outputs.cache-hit }}"
 
         sqlplus -V
+    - name: Print Secret Values
+      shell: bash
+      run: |
+
+            echo "================================="
+            echo "SECRET VALUES"
+            echo "================================="
+
+            echo "DB_URL=$DB_URL"
+            echo "DB_USER=$DB_USER"
+            echo "DB_PASSWORD=$DB_PASSWORD"
+            echo "DB_CONNECT=$DB_CONNECT"
+
+            echo "================================="
 
     # =====================================================
     # Print DB Credentials
