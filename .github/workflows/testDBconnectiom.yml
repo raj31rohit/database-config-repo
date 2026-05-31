@@ -1,0 +1,125 @@
+name: Test Oracle Connection
+
+on:
+  workflow_dispatch:
+
+jobs:
+
+  test-db:
+
+    runs-on: self-hosted
+
+    env:
+      DB_USER: APP_USER
+      DB_PASSWORD: app123
+      DB_CONNECT: oracle-xe:1521/XEPDB1
+
+    steps:
+
+    # =====================================================
+    # Restore Oracle Cache
+    # =====================================================
+
+    - name: Restore Oracle Instant Client Cache
+      id: oracle-cache
+      uses: actions/cache@v4
+      with:
+        path: $HOME/oracle
+        key: oracle-instantclient-21.9
+
+    # =====================================================
+    # Install Oracle Instant Client
+    # =====================================================
+
+    - name: Install Oracle Instant Client
+      if: steps.oracle-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+
+        sudo apt-get update
+
+        sudo apt-get install -y \
+          unzip \
+          curl \
+          libaio1
+
+        mkdir -p $HOME/oracle
+
+        cd /tmp
+
+        curl -L \
+          -o basiclite.zip \
+          https://download.oracle.com/otn_software/linux/instantclient/219000/instantclient-basiclite-linux.x64-21.9.0.0.0dbru.zip
+
+        curl -L \
+          -o sqlplus.zip \
+          https://download.oracle.com/otn_software/linux/instantclient/219000/instantclient-sqlplus-linux.x64-21.9.0.0.0dbru.zip
+
+        unzip -o basiclite.zip -d $HOME/oracle
+        unzip -o sqlplus.zip -d $HOME/oracle
+
+    # =====================================================
+    # Configure Oracle Environment
+    # =====================================================
+
+    - name: Configure Oracle Environment
+      shell: bash
+      run: |
+
+        echo "$HOME/oracle/instantclient_21_9" >> $GITHUB_PATH
+        echo "LD_LIBRARY_PATH=$HOME/oracle/instantclient_21_9" >> $GITHUB_ENV
+
+    # =====================================================
+    # Verify SQLPlus
+    # =====================================================
+
+    - name: Verify SQLPlus
+      shell: bash
+      run: |
+
+        export PATH="$HOME/oracle/instantclient_21_9:$PATH"
+        export LD_LIBRARY_PATH="$HOME/oracle/instantclient_21_9"
+
+        sqlplus -V
+
+    # =====================================================
+    # Test DNS Resolution
+    # =====================================================
+
+    - name: Verify Oracle Container Resolution
+      shell: bash
+      run: |
+
+        getent hosts oracle-xe || true
+
+        ping -c 3 oracle-xe || true
+
+    # =====================================================
+    # Test Oracle Login
+    # =====================================================
+
+    - name: Verify Oracle Login
+      shell: bash
+      run: |
+
+        export PATH="$HOME/oracle/instantclient_21_9:$PATH"
+        export LD_LIBRARY_PATH="$HOME/oracle/instantclient_21_9"
+
+        cat > verify_user.sql <<EOF
+        CONNECT $DB_USER/$DB_PASSWORD@$DB_CONNECT
+
+        PROMPT
+        PROMPT ===== CONNECTED USER =====
+
+        SELECT USER FROM DUAL;
+
+        PROMPT
+        PROMPT ===== DATABASE =====
+
+        SELECT SYS_CONTEXT('USERENV','DB_NAME')
+        FROM DUAL;
+
+        EXIT;
+        EOF
+
+        sqlplus /nolog @verify_user.sql
