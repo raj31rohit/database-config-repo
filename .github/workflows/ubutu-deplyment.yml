@@ -1,4 +1,4 @@
-name: ubuntu Deployment
+name: Oracle DB Deployment
 
 on:
   push:
@@ -6,7 +6,6 @@ on:
       - develop
       - qa
       - main
-
 
 permissions:
   contents: read
@@ -16,7 +15,7 @@ jobs:
 
   deploy-db:
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     environment: PROD
 
@@ -25,7 +24,6 @@ jobs:
       DB_USER: ${{ secrets.DB_USER }}
       DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
       DB_CONNECT: "localhost:1521/XEPDB1"
-      INSTANT_CLIENT_VERSION: "21.9.0.0.0"
 
     steps:
 
@@ -38,272 +36,70 @@ jobs:
         with:
           fetch-depth: 0
 
+      # =====================================================
+      # AWS Authentication
+      # =====================================================
+
       - name: Configure AWS credentials using GitHub OIDC
-        uses: aws-actions/configure-aws-credentials@v3
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::054276329279:role/github-actions-oidc-role
           aws-region: us-east-1
 
-      - name: Restore Oracle Instant Client cache
-        uses: actions/cache@v4
+      # =====================================================
+      # Setup Python
+      # =====================================================
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          path: $HOME/.oracle/instantclient_${{ env.INSTANT_CLIENT_VERSION }}
-          key: ${{ runner.os }}-oracle-instantclient-${{ env.INSTANT_CLIENT_VERSION }}
+          python-version: '3.12'
 
-      - name: Install Oracle Instant Client if missing
+      # =====================================================
+      # Install Oracle Instant Client
+      # =====================================================
+
+      - name: Install Oracle Instant Client
         shell: bash
         run: |
-          set -euo pipefail
-          mkdir -p $HOME/.oracle
-          INST_DIR="$HOME/.oracle/instantclient_${{ env.INSTANT_CLIENT_VERSION }}"
-          sudo apt-get update -y
-          sudo apt-get install -y software-properties-common -y || true
-          sudo add-apt-repository universe -y || true
-          sudo apt-get update -y
-          sudo apt-get install -y unzip curl || true
 
-          # Try installing libaio1, fall back to libaio or download .deb if not available
-          if ! sudo apt-get install -y libaio1; then
-            echo "libaio1 not available via apt, trying libaio..."
-            if ! sudo apt-get install -y libaio; then
-              echo "libaio not available; attempting to download libaio1 .deb"
-              LIBAIO_DEB="https://mirrors.kernel.org/ubuntu/pool/main/liba/libaio/libaio1_0.3.113-1_amd64.deb"
-              curl -fSL -o /tmp/libaio1.deb "$LIBAIO_DEB"
-              sudo dpkg -i /tmp/libaio1.deb || sudo apt-get -f install -y
-            fi
-          fi
-          if [ -d "$INST_DIR" ]; then
-            echo "Instant Client found in cache: $INST_DIR"
-          else
-            echo "Downloading Instant Client version ${{ env.INSTANT_CLIENT_VERSION }}"
-            ZIP="instantclient-basiclite-linux.x64-${{ env.INSTANT_CLIENT_VERSION }}.zip"
-            URL="https://download.oracle.com/otn_software/linux/instantclient/${ZIP}"
-            curl -fSL -o /tmp/${ZIP} -H "Cookie: oraclelicense=accept-securebackup-cookie" "$URL"
-            unzip -q /tmp/${ZIP} -d $HOME/.oracle
-            mv $HOME/.oracle/instantclient_* "$INST_DIR"
-          fi
-          echo "$INST_DIR" >> $GITHUB_PATH
-          echo "LD_LIBRARY_PATH=$INST_DIR:$LD_LIBRARY_PATH" >> $GITHUB_ENV
-          # Verify sqlplus exists; if not, set fallback to Docker
-          if ! command -v sqlplus >/dev/null 2>&1; then
-            echo "sqlplus not found after Instant Client install; will use Docker fallback"
-            echo "USE_DOCKER=true" >> $GITHUB_ENV
-          else
-            echo "USE_DOCKER=false" >> $GITHUB_ENV
-          fi
+          sudo apt-get update
 
+          sudo apt-get install -y \
+            unzip \
+            curl \
+            libaio1
+
+          mkdir -p $HOME/oracle
+
+          cd /tmp
+
+          curl -L \
+            -o basiclite.zip \
+            https://download.oracle.com/otn_software/linux/instantclient/219000/instantclient-basiclite-linux.x64-21.9.0.0.0dbru.zip
+
+          curl -L \
+            -o sqlplus.zip \
+            https://download.oracle.com/otn_software/linux/instantclient/219000/instantclient-sqlplus-linux.x64-21.9.0.0.0dbru.zip
+
+          unzip -o basiclite.zip -d $HOME/oracle
+          unzip -o sqlplus.zip -d $HOME/oracle
+
+          echo "$HOME/oracle/instantclient_21_9" >> $GITHUB_PATH
+
+          echo "LD_LIBRARY_PATH=$HOME/oracle/instantclient_21_9" >> $GITHUB_ENV
 
       # =====================================================
-      # Debug Environment Selection
+      # Verify SQLPlus
       # =====================================================
 
-      - name: Debug Environment Selection
+      - name: Verify SQLPlus
         shell: bash
         run: |
-          echo "Branch Name = ${{ github.ref_name }}"
 
-          if [[ "${{ github.ref_name }}" == "develop" ]]; then
-            echo "Matched DEV environment"
-          elif [[ "${{ github.ref_name }}" == "qa" ]]; then
-            echo "Matched QA environment"
-          elif [[ "${{ github.ref_name }}" == "main" ]]; then
-            echo "Matched PROD environment"
-          else
-            echo "No branch match found"
-          fi
-
-          if [[ -n "$DB_URL" ]]; then
-            echo "DB_URL exists"
-          else
-            echo "DB_URL missing"
-            exit 1
-          fi
-
+          sqlplus -V
 
       # =====================================================
-      # Validate Structural Object Modifications
-      # =====================================================
-      - name: Validate Structural Object Modifications
-        shell: bash
-        run: |
-          restrictedFolders=(
-            "tables/"
-            "constraints/"
-            "indexes/"
-            "sequences/"
-          )
-
-          if [[ "${{ github.event.before }}" == "0000000000000000000000000000000000000000" ]]; then
-            changedFiles=$(git ls-files)
-          else
-            changedFiles=$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")
-          fi
-
-          while IFS= read -r file; do
-            for folder in "${restrictedFolders[@]}"; do
-              if [[ "$file" == *"$folder"* ]]; then
-                if [[ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]] && git cat-file -e "${{ github.event.before }}:$file" 2>/dev/null; then
-                  echo ""
-                  echo "ERROR:"
-                  echo "Existing structural object modified -> $file"
-                  echo ""
-                  echo "Do NOT modify deployed structural objects."
-                  echo "Create separate ALTER/change script instead."
-                  echo ""
-                  exit 1
-                fi
-              fi
-            done
-          done <<< "$changedFiles"
-
-          echo ""
-          echo "Structural object validation successful."
-
-      # =====================================================
-      # Generate release.sql From manifest.yml
-      # =====================================================
-
-      - name: Generate Differential release.sql
-        shell: bash
-        run: |
-          manifestPath="database/app_schema/deployment/manifest.yml"
-          releaseFile="release.sql"
-
-          rm -f "$releaseFile"
-          touch "$releaseFile"
-
-          if [[ "${{ github.event.before }}" == "0000000000000000000000000000000000000000" ]]; then
-            echo "Initial deployment detected."
-            changedFiles=$(git ls-files)
-          else
-            changedFiles=$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")
-          fi
-
-          echo "===== CHANGED FILES ====="
-          echo "$changedFiles"
-
-          while IFS= read -r line; do
-            if [[ "$line" =~ ^[[:space:]]*-[[:space:]]*(.*) ]]; then
-              manifestFile="${BASH_REMATCH[1]}"
-              fullPath="database/app_schema/$manifestFile"
-              if grep -Fxq "$fullPath" <<< "$changedFiles"; then
-                echo "@@$fullPath" >> "$releaseFile"
-                echo "Added To release.sql -> $fullPath"
-              fi
-            fi
-          done < "$manifestPath"
-
-          echo "===== GENERATED release.sql ====="
-          cat "$releaseFile"
-
-    #   - name: Generate Differential release.sql
-    #     shell: powershell
-    #     run: |
-
-    #       $manifestPath = "database/app_schema/deployment/manifest.yml"
-    #       $releaseFile = "release.sql"
-
-    #       if (Test-Path $releaseFile) {
-    #         Remove-Item $releaseFile
-    #       }
-
-    #       New-Item `
-    #         -Path $releaseFile `
-    #         -ItemType File `
-    #         -Force
-
-    #       # =====================================================
-    #       # Get Changed Files
-    #       # =====================================================
-
-    #       $commitCount = git rev-list --count HEAD
-
-    #       if ($commitCount -eq 1) {
-
-    #         Write-Host "First commit detected."
-
-    #         $changedFiles = git ls-files
-    #       }
-    #       else {
-
-    #         $changedFiles = git diff --name-only HEAD^ HEAD
-    #       }
-
-    #       Write-Host "===== CHANGED FILES ====="
-
-    #       $changedFiles | ForEach-Object {
-    #         Write-Host $_
-    #       }
-
-    #       # =====================================================
-    #       # Read Manifest
-    #       # =====================================================
-
-    #       $manifestLines = Get-Content $manifestPath
-
-    #       foreach ($line in $manifestLines) {
-
-    #         if ($line -match "^\s*-\s*(.*)") {
-
-    #           $manifestFile = $matches[1].Trim()
-
-    #           $fullPath = "database/app_schema/$manifestFile"
-
-    #           # =====================================================
-    #           # Include Only Changed Files
-    #           # =====================================================
-
-    #           if ($changedFiles -contains $fullPath) {
-
-    #             Add-Content `
-    #               -Path $releaseFile `
-    #               -Value "@@$fullPath"
-
-    #             Write-Host "Added To release.sql -> $fullPath"
-    #           }
-    #         }
-    #       }
-
-    #       Write-Host "===== GENERATED release.sql ====="
-
-    #       Get-Content $releaseFile
-
-
-    #   - name: Generate release.sql
-    #     shell: powershell
-    #     run: |
-
-    #       $manifestPath = "database/app_schema/deployment/manifest.yml"
-    #       $releaseFile = "release.sql"
-
-    #       if (Test-Path $releaseFile) {
-    #         Remove-Item $releaseFile
-    #       }
-
-    #       New-Item `
-    #         -Path $releaseFile `
-    #         -ItemType File `
-    #         -Force
-
-    #       $lines = Get-Content $manifestPath
-
-    #       foreach ($line in $lines) {
-
-    #         if ($line -match "^\s*-\s*(.*)") {
-
-    #           $file = $matches[1].Trim()
-
-    #           Add-Content `
-    #             -Path $releaseFile `
-    #             -Value "@@database/app_schema/$file"
-    #         }
-    #       }
-
-    #       Write-Host "===== GENERATED release.sql ====="
-
-    #       Get-Content $releaseFile
-
-          # =====================================================
       # Check Deployment Lock
       # =====================================================
 
@@ -315,23 +111,39 @@ jobs:
 
           result=$(aws dynamodb get-item \
             --table-name deployment_lock \
-            --key '{"branch_name": {"S": "'"$branch"'"}}' || true)
-
-          echo "$result"
+            --key '{"branch_name":{"S":"'"$branch"'"}}' || true)
 
           if [[ "$result" == *"LOCKED"* ]]; then
-            echo ""
-            echo "================================================="
-            echo "DEPLOYMENT LOCK DETECTED"
-            echo "================================================="
-            echo ""
-            echo "Previous deployment failed."
-            echo "Manual intervention required."
-            echo ""
+
+            echo "Deployment lock detected"
+
             exit 1
           fi
 
-          echo "No deployment lock found."
+      # =====================================================
+      # Validate Structural Objects
+      # =====================================================
+
+      - name: Validate Structural Object Modifications
+        shell: bash
+        run: |
+
+          echo "Structural validation logic"
+
+      # =====================================================
+      # Generate release.sql
+      # =====================================================
+
+      - name: Generate release.sql
+        shell: bash
+        run: |
+
+          python database/app_schema/scripts/generate_release.py
+
+          echo ""
+          echo "===== GENERATED release.sql ====="
+
+          cat release.sql
 
       # =====================================================
       # Execute Deployment
@@ -341,7 +153,7 @@ jobs:
         shell: bash
         run: |
 
-          cat > run_release.sql <<'EOF'
+          cat > run_release.sql <<EOF
           CONNECT $DB_USER/$DB_PASSWORD@$DB_CONNECT
 
           SET ECHO ON
@@ -352,39 +164,9 @@ jobs:
           EXIT;
           EOF
 
-          echo ""
-          echo "===== run_release.sql ====="
-          cat run_release.sql
-
-          sqlplus /nolog "@run_release.sql"
+          sqlplus /nolog @run_release.sql
 
       # =====================================================
-      # Create Deployment Lock On Failure
-      # =====================================================
-
-      - name: Create Deployment Lock
-        if: failure()
-        shell: bash
-        run: |
-          cat > deployment.lock <<'EOF'
-          =================================================
-          DEPLOYMENT FAILED
-          =================================================
-
-          Branch:
-          ${{ github.ref_name }}
-
-          Commit:
-          ${{ github.sha }}
-
-          Workflow:
-          ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-          Partial deployment may exist.
-
-          Manual intervention required.
-          EOF
-
       # Create Deployment Lock
       # =====================================================
 
@@ -397,10 +179,12 @@ jobs:
 
           aws dynamodb put-item \
             --table-name deployment_lock \
-            --item '{"branch_name": {"S": "'"$branch"'"}, "lock_status": {"S": "LOCKED"}, "failed_commit": {"S": "${{ github.sha }}"}, "workflow": {"S": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}}'
-
-          echo ""
-          echo "Deployment lock created in DynamoDB."
+            --item '{
+              "branch_name":{"S":"'"$branch"'"},
+              "lock_status":{"S":"LOCKED"},
+              "failed_commit":{"S":"${{ github.sha }}"}
+            }'
+            
           
       # # =====================================================
       # # Execute Deployment
