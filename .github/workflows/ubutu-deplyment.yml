@@ -1,4 +1,4 @@
-name: DB Deployment
+name: ubuntu Deployment
 
 on:
   push:
@@ -34,6 +34,8 @@ jobs:
 
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Configure AWS credentials using GitHub OIDC
         uses: aws-actions/configure-aws-credentials@v3
@@ -82,12 +84,16 @@ jobs:
             "sequences/"
           )
 
-          changedFiles=$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")
+          if [[ "${{ github.event.before }}" == "0000000000000000000000000000000000000000" ]]; then
+            changedFiles=$(git ls-files)
+          else
+            changedFiles=$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")
+          fi
 
           while IFS= read -r file; do
             for folder in "${restrictedFolders[@]}"; do
               if [[ "$file" == *"$folder"* ]]; then
-                if git cat-file -e "${{ github.event.before }}:$file" 2>/dev/null; then
+                if [[ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]] && git cat-file -e "${{ github.event.before }}:$file" 2>/dev/null; then
                   echo ""
                   echo "ERROR:"
                   echo "Existing structural object modified -> $file"
@@ -253,43 +259,42 @@ jobs:
       # =====================================================
 
       - name: Check Deployment Lock
-        shell: powershell
+        shell: bash
         run: |
 
-          $branch = "${{ github.ref_name }}"
+          branch="${{ github.ref_name }}"
 
-          $result = aws dynamodb get-item `
-            --table-name deployment_lock `
-            --key "{\""branch_name\"": {\""S\"": \""$branch\""}}"
+          result=$(aws dynamodb get-item \
+            --table-name deployment_lock \
+            --key '{"branch_name": {"S": "'"$branch"'"}}' || true)
 
-          Write-Host $result
+          echo "$result"
 
-          if ($result -match "LOCKED") {
-
-            Write-Host ""
-            Write-Host "================================================="
-            Write-Host "DEPLOYMENT LOCK DETECTED"
-            Write-Host "================================================="
-            Write-Host ""
-            Write-Host "Previous deployment failed."
-            Write-Host "Manual intervention required."
-            Write-Host ""
-
+          if [[ "$result" == *"LOCKED"* ]]; then
+            echo ""
+            echo "================================================="
+            echo "DEPLOYMENT LOCK DETECTED"
+            echo "================================================="
+            echo ""
+            echo "Previous deployment failed."
+            echo "Manual intervention required."
+            echo ""
             exit 1
-          }
+          fi
 
-          Write-Host "No deployment lock found."
+          echo "No deployment lock found."
 
       # =====================================================
       # Execute Deployment
       # =====================================================
 
       - name: Execute release.sql
-        shell: powershell
+        shell: bash
         run: |
 
           @"
-          CONNECT $env:DB_USER/$env:DB_PASSWORD@$env:DB_CONNECT
+          cat > run_release.sql <<'EOF'
+          CONNECT $DB_USER/$DB_PASSWORD@$DB_CONNECT
 
           SET ECHO ON
           SET SERVEROUTPUT ON
@@ -297,12 +302,11 @@ jobs:
           @release.sql
 
           EXIT;
-          "@ | Out-File run_release.sql -Encoding ascii
+          EOF
 
-          Write-Host ""
-          Write-Host "===== run_release.sql ====="
-
-          Get-Content run_release.sql
+          echo ""
+          echo "===== run_release.sql ====="
+          cat run_release.sql
 
           sqlplus /nolog "@run_release.sql"
 
@@ -312,15 +316,9 @@ jobs:
 
       - name: Create Deployment Lock
         if: failure()
-        shell: powershell
+        shell: bash
         run: |
-
-          New-Item `
-            -Path "deployment.lock" `
-            -ItemType File `
-            -Force
-
-          @"
+          cat > deployment.lock <<'EOF'
           =================================================
           DEPLOYMENT FAILED
           =================================================
@@ -337,33 +335,24 @@ jobs:
           Partial deployment may exist.
 
           Manual intervention required.
-          "@ | Out-File deployment.lock
+          EOF
 
-          Write-Host ""
-          Write-Host "Deployment lock created."
-
-          # =====================================================
       # Create Deployment Lock
       # =====================================================
 
       - name: Create Deployment Lock
         if: failure()
-        shell: powershell
+        shell: bash
         run: |
 
-          $branch = "${{ github.ref_name }}"
+          branch="${{ github.ref_name }}"
 
-          aws dynamodb put-item `
-            --table-name deployment_lock `
-            --item "{
-              \""branch_name\"": {\""S\"": \""$branch\""},
-              \""lock_status\"": {\""S\"": \""LOCKED\""},
-              \""failed_commit\"": {\""S\"": \""${{ github.sha }}\""},
-              \""workflow\"": {\""S\"": \""${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\""}
-            }"
+          aws dynamodb put-item \
+            --table-name deployment_lock \
+            --item '{"branch_name": {"S": "'"$branch"'"}, "lock_status": {"S": "LOCKED"}, "failed_commit": {"S": "${{ github.sha }}"}, "workflow": {"S": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}}'
 
-          Write-Host ""
-          Write-Host "Deployment lock created in DynamoDB."
+          echo ""
+          echo "Deployment lock created in DynamoDB."
           
       # # =====================================================
       # # Execute Deployment
