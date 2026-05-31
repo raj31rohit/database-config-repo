@@ -35,25 +35,16 @@ jobs:
         fetch-depth: 0
 
     # =====================================================
-    # Setup Python
-    # =====================================================
-
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
-
-    # =====================================================
     # Configure Oracle Environment
     # =====================================================
 
-    # - name: Configure Oracle Environment
-    #   shell: bash
-    #   run: |
+    - name: Configure Oracle Environment
+      shell: bash
+      run: |
 
-    #     echo "/opt/oracle/instantclient_21_9" >> $GITHUB_PATH
+        echo "/opt/oracle/instantclient_21_9" >> $GITHUB_PATH
 
-    #     echo "LD_LIBRARY_PATH=/opt/oracle/instantclient_21_9" >> $GITHUB_ENV
+        echo "LD_LIBRARY_PATH=/opt/oracle/instantclient_21_9" >> $GITHUB_ENV
 
     # =====================================================
     # Verify SQLPlus
@@ -64,6 +55,17 @@ jobs:
       run: |
 
         sqlplus -V
+
+    # =====================================================
+    # Setup Python
+    # =====================================================
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+
 
     # =====================================================
     # Convert JDBC URL
