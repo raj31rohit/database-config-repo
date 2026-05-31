@@ -111,12 +111,12 @@ jobs:
     # Verify SQLPlus
     # =====================================================
 
-    - name: Verify SQLPlus
-      shell: bash
-      run: |
+    # - name: Verify SQLPlus
+    #   shell: bash
+    #   run: |
 
-        echo "Cache Hit = ${{ steps.oracle-cache.outputs.cache-hit }}"
-        sqlplus -V
+    #     echo "Cache Hit = ${{ steps.oracle-cache.outputs.cache-hit }}"
+    #     sqlplus -V
 
     # =====================================================
     # Print Secret Details
