@@ -36,28 +36,28 @@ jobs:
       shell: bash
       run: |
 
-        sudo apt-get update
+            apt-get update
 
-        sudo apt-get install -y \
-          unzip \
-          curl \
-          libaio1
+            apt-get install -y \
+            unzip \
+            curl \
+            libaio1
 
-        mkdir -p $HOME/oracle
+            mkdir -p $HOME/oracle
 
-        cd /tmp
+            cd /tmp
 
-        curl -L \
-          -o basiclite.zip \
-          https://download.oracle.com/otn_software/linux/instantclient/219000/instantclient-basiclite-linux.x64-21.9.0.0.0dbru.zip
+            curl -L \
+            -o basiclite.zip \
+            https://download.oracle.com/otn_software/linux/instantclient/219000/instantclient-basiclite-linux.x64-21.9.0.0.0dbru.zip
 
-        curl -L \
-          -o sqlplus.zip \
-          https://download.oracle.com/otn_software/linux/instantclient/219000/instantclient-sqlplus-linux.x64-21.9.0.0.0dbru.zip
+            curl -L \
+            -o sqlplus.zip \
+            https://download.oracle.com/otn_software/linux/instantclient/219000/instantclient-sqlplus-linux.x64-21.9.0.0.0dbru.zip
 
-        unzip -o basiclite.zip -d $HOME/oracle
-        unzip -o sqlplus.zip -d $HOME/oracle
-        
+            unzip -o basiclite.zip -d $HOME/oracle
+            unzip -o sqlplus.zip -d $HOME/oracle
+
 
     # =====================================================
     # Configure Oracle Environment
