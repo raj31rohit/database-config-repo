@@ -34,6 +34,21 @@ jobs:
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
+    - name: Configure Oracle Environment
+      shell: bash
+      run: |
+
+        echo "/opt/oracle/instantclient_21_9" >> $GITHUB_PATH
+
+        echo "LD_LIBRARY_PATH=/opt/oracle/instantclient_21_9" >> $GITHUB_ENV
+
+    - name: Verify SQLPlus
+      shell: bash
+      run: |
+
+        which sqlplus
+
+        sqlplus -V
 
     # =====================================================
     # Configure AWS Credentials
