@@ -353,7 +353,7 @@ jobs:
 
         cat > validate.sql <<EOF
 
-        CONNECT $VALIDATE_DB_USER/$VALIDATE_DB_PASSWORD@$DB_CONNECT
+        CONNECT $DB_USER/$DB_PASSWORD@$DB_CONNECT
 
         WHENEVER SQLERROR EXIT FAILURE
 
@@ -377,7 +377,7 @@ jobs:
         BEGIN
 
           DBMS_UTILITY.compile_schema(
-            schema => '$VALIDATE_DB_USER'
+            schema => '$DB_USER'
           );
 
         END;
@@ -387,7 +387,7 @@ jobs:
         EOF
 
         sqlplus -s \
-        "$VALIDATE_DB_USER/$VALIDATE_DB_PASSWORD@$DB_CONNECT" \
+        "$DB_USER/$DB_PASSWORD@$DB_CONNECT" \
         @compile.sql
 
     # =====================================================
@@ -412,7 +412,7 @@ jobs:
 
         COUNT=$(
           sqlplus -s \
-          "$VALIDATE_DB_USER/$VALIDATE_DB_PASSWORD@$DB_CONNECT" \
+          "$DB_USER/$DB_PASSWORD@$DB_CONNECT" \
           @invalid.sql
         )
 
