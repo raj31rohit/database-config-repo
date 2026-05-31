@@ -23,168 +23,263 @@ jobs:
       DB_URL: ${{ secrets.DB_URL }}
       DB_USER: ${{ secrets.DB_USER }}
       DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-      DB_CONNECT: "localhost:1521/XEPDB1"
+      DB_CONNECT: localhost:1521/XEPDB1
 
     steps:
 
-      # =====================================================
-      # Checkout Repository
-      # =====================================================
+    # =====================================================
+    # Checkout Repository
+    # =====================================================
 
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
-      # =====================================================
-      # AWS Authentication
-      # =====================================================
+    # =====================================================
+    # Configure AWS Credentials
+    # =====================================================
 
-      - name: Configure AWS credentials using GitHub OIDC
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::054276329279:role/github-actions-oidc-role
-          aws-region: us-east-1
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::054276329279:role/github-actions-oidc-role
+        aws-region: us-east-1
 
-      # =====================================================
-      # Setup Python
-      # =====================================================
+    # =====================================================
+    # Setup Python
+    # =====================================================
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
 
-      # =====================================================
-      # Install Oracle Instant Client
-      # =====================================================
+    # =====================================================
+    # Restore Oracle Cache
+    # =====================================================
 
-      - name: Install Oracle Instant Client
-        shell: bash
-        run: |
+    - name: Restore Oracle Instant Client Cache
+      id: oracle-cache
+      uses: actions/cache@v4
+      with:
+        path: $HOME/oracle
+        key: oracle-instantclient-21.9
 
-          sudo apt-get update
+    # =====================================================
+    # Install Oracle Instant Client
+    # =====================================================
 
-          sudo apt-get install -y \
-            unzip \
-            curl \
-            libaio1
+    - name: Install Oracle Instant Client
+      if: steps.oracle-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
 
-          mkdir -p $HOME/oracle
+        set -e
 
-          cd /tmp
+        sudo apt-get update
 
-          curl -L \
-            -o basiclite.zip \
-            https://download.oracle.com/otn_software/linux/instantclient/219000/instantclient-basiclite-linux.x64-21.9.0.0.0dbru.zip
+        sudo apt-get install -y \
+          unzip \
+          curl \
+          libaio1
 
-          curl -L \
-            -o sqlplus.zip \
-            https://download.oracle.com/otn_software/linux/instantclient/219000/instantclient-sqlplus-linux.x64-21.9.0.0.0dbru.zip
+        mkdir -p $HOME/oracle
 
-          unzip -o basiclite.zip -d $HOME/oracle
-          unzip -o sqlplus.zip -d $HOME/oracle
+        cd /tmp
 
-          echo "$HOME/oracle/instantclient_21_9" >> $GITHUB_PATH
+        curl -L \
+          -o basiclite.zip \
+          https://download.oracle.com/otn_software/linux/instantclient/219000/instantclient-basiclite-linux.x64-21.9.0.0.0dbru.zip
 
-          echo "LD_LIBRARY_PATH=$HOME/oracle/instantclient_21_9" >> $GITHUB_ENV
+        curl -L \
+          -o sqlplus.zip \
+          https://download.oracle.com/otn_software/linux/instantclient/219000/instantclient-sqlplus-linux.x64-21.9.0.0.0dbru.zip
 
-      # =====================================================
-      # Verify SQLPlus
-      # =====================================================
+        unzip -o basiclite.zip -d $HOME/oracle
+        unzip -o sqlplus.zip -d $HOME/oracle
 
-      - name: Verify SQLPlus
-        shell: bash
-        run: |
+    # =====================================================
+    # Configure Oracle Environment
+    # =====================================================
 
-          sqlplus -V
+    - name: Configure Oracle Environment
+      shell: bash
+      run: |
 
-      # =====================================================
-      # Check Deployment Lock
-      # =====================================================
+        echo "$HOME/oracle/instantclient_21_9" >> $GITHUB_PATH
 
-      - name: Check Deployment Lock
-        shell: bash
-        run: |
+        echo "LD_LIBRARY_PATH=$HOME/oracle/instantclient_21_9" >> $GITHUB_ENV
 
-          branch="${{ github.ref_name }}"
+    # =====================================================
+    # Verify SQLPlus
+    # =====================================================
 
-          result=$(aws dynamodb get-item \
-            --table-name deployment_lock \
-            --key '{"branch_name":{"S":"'"$branch"'"}}' || true)
+    - name: Verify SQLPlus
+      shell: bash
+      run: |
 
-          if [[ "$result" == *"LOCKED"* ]]; then
+        echo "Cache Hit = ${{ steps.oracle-cache.outputs.cache-hit }}"
 
-            echo "Deployment lock detected"
+        sqlplus -V
 
-            exit 1
-          fi
+    # =====================================================
+    # Check Deployment Lock
+    # =====================================================
 
-      # =====================================================
-      # Validate Structural Objects
-      # =====================================================
+    - name: Check Deployment Lock
+      shell: bash
+      run: |
 
-      - name: Validate Structural Object Modifications
-        shell: bash
-        run: |
+        branch="${{ github.ref_name }}"
 
-          echo "Structural validation logic"
+        result=$(aws dynamodb get-item \
+          --table-name deployment_lock \
+          --key '{"branch_name":{"S":"'"$branch"'"}}' || true)
 
-      # =====================================================
-      # Generate release.sql
-      # =====================================================
-
-      - name: Generate release.sql
-        shell: bash
-        run: |
-
-          python database/app_schema/scripts/generate_release.py
+        if [[ "$result" == *"LOCKED"* ]]; then
 
           echo ""
-          echo "===== GENERATED release.sql ====="
+          echo "DEPLOYMENT LOCK DETECTED"
+          echo ""
 
-          cat release.sql
+          exit 1
+        fi
 
-      # =====================================================
-      # Execute Deployment
-      # =====================================================
+        echo "No deployment lock found."
 
-      - name: Execute release.sql
-        shell: bash
-        run: |
+    # =====================================================
+    # Validate Structural Object Modifications
+    # =====================================================
 
-          cat > run_release.sql <<EOF
-          CONNECT $DB_USER/$DB_PASSWORD@$DB_CONNECT
+    - name: Validate Structural Object Modifications
+      shell: bash
+      run: |
 
-          SET ECHO ON
-          SET SERVEROUTPUT ON
+        restrictedFolders=(
+          "tables/"
+          "constraints/"
+          "indexes/"
+          "sequences/"
+        )
 
-          @release.sql
+        changedFiles=$(git diff --name-only \
+          "${{ github.event.before }}" \
+          "${{ github.sha }}")
 
-          EXIT;
-          EOF
+        while IFS= read -r file; do
 
-          sqlplus /nolog @run_release.sql
+          for folder in "${restrictedFolders[@]}"; do
 
-      # =====================================================
-      # Create Deployment Lock
-      # =====================================================
+            if [[ "$file" == *"$folder"* ]]; then
 
-      - name: Create Deployment Lock
-        if: failure()
-        shell: bash
-        run: |
+              if git cat-file -e \
+                "${{ github.event.before }}:$file" \
+                2>/dev/null; then
 
-          branch="${{ github.ref_name }}"
+                echo ""
+                echo "ERROR:"
+                echo "Existing structural object modified -> $file"
+                echo ""
 
-          aws dynamodb put-item \
-            --table-name deployment_lock \
-            --item '{
-              "branch_name":{"S":"'"$branch"'"},
-              "lock_status":{"S":"LOCKED"},
-              "failed_commit":{"S":"${{ github.sha }}"}
-            }'
-            
+                exit 1
+              fi
+            fi
+
+          done
+
+        done <<< "$changedFiles"
+
+    # =====================================================
+    # Generate release.sql
+    # =====================================================
+
+    - name: Generate Differential release.sql
+      shell: bash
+      run: |
+
+        manifestPath="database/app_schema/deployment/manifest.yml"
+        releaseFile="release.sql"
+
+        rm -f "$releaseFile"
+
+        touch "$releaseFile"
+
+        changedFiles=$(git diff --name-only \
+          "${{ github.event.before }}" \
+          "${{ github.sha }}")
+
+        while IFS= read -r line; do
+
+          if [[ "$line" =~ ^[[:space:]]*-[[:space:]]*(.*) ]]; then
+
+            manifestFile="${BASH_REMATCH[1]}"
+
+            fullPath="database/app_schema/$manifestFile"
+
+            if grep -Fxq "$fullPath" <<< "$changedFiles"; then
+
+              echo "@@$fullPath" >> "$releaseFile"
+
+              echo "Added -> $fullPath"
+
+            fi
+          fi
+
+        done < "$manifestPath"
+
+        echo ""
+        echo "===== GENERATED release.sql ====="
+
+        cat "$releaseFile"
+
+    # =====================================================
+    # Execute Deployment
+    # =====================================================
+
+    - name: Execute release.sql
+      shell: bash
+      run: |
+
+        cat > run_release.sql <<EOF
+        CONNECT $DB_USER/$DB_PASSWORD@$DB_CONNECT
+
+        SET ECHO ON
+        SET SERVEROUTPUT ON
+
+        @release.sql
+
+        EXIT;
+        EOF
+
+        echo ""
+        echo "===== run_release.sql ====="
+
+        cat run_release.sql
+
+        sqlplus /nolog @run_release.sql
+
+    # =====================================================
+    # Create Deployment Lock
+    # =====================================================
+
+    - name: Create Deployment Lock
+      if: failure()
+      shell: bash
+      run: |
+
+        branch="${{ github.ref_name }}"
+
+        aws dynamodb put-item \
+          --table-name deployment_lock \
+          --item '{
+            "branch_name":{"S":"'"$branch"'"},
+            "lock_status":{"S":"LOCKED"},
+            "failed_commit":{"S":"${{ github.sha }}"},
+            "workflow":{"S":"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}
+          }'
+
+        echo "Deployment lock created."
           
       # # =====================================================
       # # Execute Deployment
