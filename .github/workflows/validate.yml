@@ -18,14 +18,10 @@ jobs:
   validate-db:
 
     runs-on: self-hosted
-
     env:
-
-      DB_URL: ${{ secrets.DB_URL }}
-
-      VALIDATE_DB_USER: ${{ secrets.VALIDATE_DB_USER }}
-
-      VALIDATE_DB_PASSWORD: ${{ secrets.VALIDATE_DB_PASSWORD }}
+        DB_URL: ${{ secrets.DB_URL }}
+        VALIDATE_DB_USER: ${{ secrets.VALIDATE_DB_USER }}
+        VALIDATE_DB_PASSWORD: ${{ secrets.VALIDATE_DB_PASSWORD }}
 
     steps:
 
@@ -300,8 +296,8 @@ jobs:
     - name: Generate release.sql
       shell: bash
       run: |
-
-        python3 database/app_schema/scripts/generate_release.py
+       python3 database/app_schema/scripts/generate_release.py
+        
 
     # =====================================================
     # Show release.sql
@@ -437,7 +433,7 @@ jobs:
         echo "===================================="
 
 
-        
+
 
 # name: Database Validation
 
