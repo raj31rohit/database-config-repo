@@ -15,18 +15,14 @@ jobs:
 
   deploy-db:
 
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
 
     environment: PROD
 
     env:
-        DB_URL: jdbc:oracle:thin:@oracle-xe:1521/XEPDB1
-        DB_USER: system
-        DB_PASSWORD: Oracle123
-            # env:
-    #   DB_URL: ${{ secrets.DB_URL }}
-    #   DB_USER: ${{ secrets.DB_USER }}
-    #   DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      DB_URL: ${{ secrets.DB_URL }}
+      DB_USER: ${{ secrets.DB_USER }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
 
     steps:
 
@@ -167,20 +163,6 @@ jobs:
         nslookup host.docker.internal || true
 
         ping -c 2 host.docker.internal || true
-
-
-
-    - name: Verify Oracle Network
-      shell: bash
-      run: |
-
-        DB_CONNECT=$(echo "$DB_URL" | sed 's#jdbc:oracle:thin:@##')
-
-        HOST=$(echo "$DB_CONNECT" | cut -d':' -f1)
-
-        echo "Host = $HOST"
-
-        nc -zv $HOST 1521
 
         
     # =====================================================
