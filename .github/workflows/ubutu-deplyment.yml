@@ -152,6 +152,18 @@ jobs:
         echo "Derived SQLPlus Connection:"
         echo "$DB_CONNECT"
 
+    - name: Debug Connection String
+      shell: bash
+      run: |
+
+        DB_CONNECT=$(echo "$DB_URL" | sed 's#jdbc:oracle:thin:@##')
+
+        echo "DB_CONNECT=$DB_CONNECT"
+
+        nslookup host.docker.internal || true
+
+        ping -c 2 host.docker.internal || true
+
     # =====================================================
     # Verify Oracle Login
     # =====================================================
