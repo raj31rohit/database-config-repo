@@ -1,0 +1,631 @@
+name: Database Validation
+
+on:
+
+  pull_request:
+
+    branches:
+      - develop
+      - qa
+      - main
+
+permissions:
+  contents: read
+  id-token: write
+
+
+env:
+  DB_URL: ${{ secrets.DB_URL }}
+  DB_USER: ${{ secrets.DB_USER }}
+  DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+
+  environment: PROD
+
+
+jobs:
+
+  validate-db:
+
+    runs-on: self-hosted
+
+    steps:
+
+    # =====================================================
+    # Checkout Repository
+    # =====================================================
+
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    # =====================================================
+    # Configure Oracle Environment
+    # =====================================================
+
+    - name: Configure Oracle Environment
+      shell: bash
+      run: |
+
+        echo "/opt/oracle/instantclient_21_9" >> $GITHUB_PATH
+
+        echo "LD_LIBRARY_PATH=/opt/oracle/instantclient_21_9" >> $GITHUB_ENV
+
+    # =====================================================
+    # Verify SQLPlus
+    # =====================================================
+
+    - name: Verify SQLPlus
+      shell: bash
+      run: |
+
+        sqlplus -V
+
+    # =====================================================
+    # Setup Python
+    # =====================================================
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+
+
+    # =====================================================
+    # Convert JDBC URL
+    # =====================================================
+
+    - name: Convert JDBC URL For SQLPlus
+      shell: bash
+      run: |
+
+        DB_CONNECT=$(echo "$DB_URL" | sed 's#jdbc:oracle:thin:@##')
+
+        echo "DB_CONNECT=$DB_CONNECT" >> $GITHUB_ENV
+
+    # =====================================================
+    # Show Changed Files
+    # =====================================================
+
+    - name: Show Changed Files
+      shell: bash
+      run: |
+
+        echo "===== CHANGED FILES ====="
+
+        git diff --name-only \
+          origin/${{ github.base_ref }} \
+          HEAD
+
+    # =====================================================
+    # Structural Object Validation
+    # =====================================================
+
+    - name: Validate Structural Object Modifications
+      shell: bash
+      run: |
+
+        restrictedFolders=(
+          "tables/"
+          "constraints/"
+          "indexes/"
+          "sequences/"
+        )
+
+        changedFiles=$(git diff --name-only \
+          origin/${{ github.base_ref }} \
+          HEAD)
+
+        while IFS= read -r file; do
+
+          for folder in "${restrictedFolders[@]}"; do
+
+            if [[ "$file" == database/app_schema/$folder* ]]; then
+
+              if git cat-file -e \
+                "origin/${{ github.base_ref }}:$file" \
+                2>/dev/null; then
+
+                echo ""
+                echo "ERROR:"
+                echo "Existing structural object modified:"
+                echo "$file"
+                echo ""
+                echo "Create a change script under changes/"
+                echo ""
+
+                exit 1
+
+              fi
+
+            fi
+
+          done
+
+        done <<< "$changedFiles"
+
+    # =====================================================
+    # Folder Validation
+    # =====================================================
+
+    - name: Validate Folder Structure
+      shell: bash
+      run: |
+
+        allowedFolders=(
+          tables
+          constraints
+          sequences
+          indexes
+          triggers
+          views
+          functions
+          procedures
+          packages
+          seed_data
+          changes
+          rollback
+        )
+
+        changedFiles=$(git diff --name-only \
+          origin/${{ github.base_ref }} \
+          HEAD)
+
+        while IFS= read -r file; do
+
+          if [[ "$file" == *.sql ]]; then
+
+            folder=$(echo "$file" | cut -d'/' -f3)
+
+            if [[ ! " ${allowedFolders[*]} " =~ " ${folder} " ]]; then
+
+              echo "Invalid folder: $file"
+
+              exit 1
+
+            fi
+
+          fi
+
+        done <<< "$changedFiles"
+
+    # =====================================================
+    # Naming Convention Validation
+    # =====================================================
+
+    - name: Validate Naming Standards
+      shell: bash
+      run: |
+
+        changedFiles=$(git diff --name-only \
+          origin/${{ github.base_ref }} \
+          HEAD)
+
+        while IFS= read -r file; do
+
+          filename=$(basename "$file")
+
+          case "$file" in
+
+            database/app_schema/indexes/*)
+
+              [[ "$filename" =~ ^idx_ ]] || {
+
+                echo "Invalid index naming: $filename"
+
+                exit 1
+
+              }
+              ;;
+
+            database/app_schema/constraints/*)
+
+              [[ "$filename" =~ ^(pk_|fk_|uk_|ck_) ]] || {
+
+                echo "Invalid constraint naming: $filename"
+
+                exit 1
+
+              }
+              ;;
+
+          esac
+
+        done <<< "$changedFiles"
+
+    # =====================================================
+    # Rollback Validation
+    # =====================================================
+
+    - name: Validate Rollback Scripts
+      shell: bash
+      run: |
+
+        for file in database/app_schema/changes/*.sql; do
+
+          [ -e "$file" ] || continue
+
+          base=$(basename "$file" .sql)
+
+          rollback="database/app_schema/rollback/${base}_rollback.sql"
+
+          if [ ! -f "$rollback" ]; then
+
+            echo ""
+            echo "Rollback missing:"
+            echo "$rollback"
+            echo ""
+
+            exit 1
+
+          fi
+
+        done
+
+    # =====================================================
+    # Dangerous SQL Validation
+    # =====================================================
+
+    - name: Validate Dangerous Statements
+      shell: bash
+      run: |
+
+        changedFiles=$(git diff --name-only \
+          origin/${{ github.base_ref }} \
+          HEAD)
+
+        while IFS= read -r file; do
+
+          if [[ "$file" == *.sql ]]; then
+
+            if grep -Eiq \
+              "DROP TABLE|TRUNCATE TABLE|DROP USER|DROP TABLESPACE" \
+              "$file"; then
+
+              echo ""
+              echo "Dangerous statement found:"
+              echo "$file"
+              echo ""
+
+              exit 1
+
+            fi
+
+          fi
+
+        done <<< "$changedFiles"
+
+    # =====================================================
+    # Generate release.sql
+    # =====================================================
+
+    - name: Generate release.sql
+      shell: bash
+      run: |
+       python3 database/app_schema/scripts/generate_release.py
+        
+
+    # =====================================================
+    # Show release.sql
+    # =====================================================
+
+    - name: Show release.sql
+      shell: bash
+      run: |
+
+        echo ""
+        echo "===== GENERATED release.sql ====="
+
+        cat release.sql
+
+    # =====================================================
+    # Validate release.sql
+    # =====================================================
+
+    - name: Validate release.sql
+      shell: bash
+      run: |
+
+        [ -f release.sql ] || {
+
+          echo "release.sql missing"
+
+          exit 1
+
+        }
+
+        [ -s release.sql ] || {
+
+          echo "release.sql empty"
+
+          exit 1
+
+        }
+
+    # =====================================================
+    # Deploy To Validation Schema
+    # =====================================================
+
+    - name: Deploy To Validation Schema
+      shell: bash
+      run: |
+
+        cat > validate.sql <<EOF
+
+        CONNECT $DB_USER/$DB_PASSWORD@$DB_CONNECT
+
+        WHENEVER SQLERROR EXIT FAILURE
+
+        @release.sql
+
+        EXIT;
+        EOF
+
+        sqlplus -s /nolog @validate.sql
+
+    # =====================================================
+    # Compile Schema
+    # =====================================================
+
+    - name: Compile Validation Schema
+      shell: bash
+      run: |
+
+        cat > compile.sql <<EOF
+
+        BEGIN
+
+          DBMS_UTILITY.compile_schema(
+            schema => '$DB_USER'
+          );
+
+        END;
+        /
+
+        EXIT;
+        EOF
+
+        sqlplus -s \
+        "$DB_USER/$DB_PASSWORD@$DB_CONNECT" \
+        @compile.sql
+
+    # =====================================================
+    # Invalid Object Validation
+    # =====================================================
+
+    - name: Validate Invalid Objects
+      shell: bash
+      run: |
+
+        cat > invalid.sql <<EOF
+
+        SET HEADING OFF
+        SET FEEDBACK OFF
+
+        SELECT COUNT(*)
+        FROM user_objects
+        WHERE status='INVALID';
+
+        EXIT;
+        EOF
+
+        COUNT=$(
+          sqlplus -s \
+          "$DB_USER/$DB_PASSWORD@$DB_CONNECT" \
+          @invalid.sql
+        )
+
+        COUNT=$(echo "$COUNT" | tr -d '[:space:]')
+
+        if [ "$COUNT" != "0" ]; then
+
+          echo "Invalid objects found."
+
+          exit 1
+
+        fi
+
+    # =====================================================
+    # Validation Success
+    # =====================================================
+
+    - name: Validation Complete
+      shell: bash
+      run: |
+
+        echo ""
+        echo "===================================="
+        echo "DATABASE VALIDATION PASSED"
+        echo "===================================="
+
+
+
+
+# name: Database Validation
+
+# on:
+#     pull_request:
+#         branches:
+#         - develop
+#         - qa
+#         - main
+
+# permissions:
+#   contents: read
+
+
+# jobs:
+#     validate-db:
+#         runs-on: self-hosted
+#         steps:
+#         - name: Checkout Repository
+#           uses: actions/checkout@v4
+#           with:
+#             fetch-depth: 0
+
+#         - name: Setup Python
+#           uses: actions/setup-python@v5
+#           with:
+#             python-version: '3.12'
+
+#         - name: Show Changed Files
+#           shell: bash
+#           run: |
+
+#             echo ""
+#             echo "===== CHANGED FILES ====="
+
+#             git diff --name-only \
+#             origin/${{ github.base_ref }} \
+#             HEAD
+
+#         - name: Validate Structural Object Modifications
+#           shell: bash
+#           run: |
+
+#             echo ""
+#             echo "===== STRUCTURAL OBJECT VALIDATION ====="
+
+#             restrictedFolders=(
+#             "tables/"
+#             "constraints/"
+#             "indexes/"
+#             "sequences/"
+#             )
+
+#             changedFiles=$(git diff --name-only \
+#             origin/${{ github.base_ref }} \
+#             HEAD)
+
+#             while IFS= read -r file; do
+
+#             for folder in "${restrictedFolders[@]}"; do
+
+#                 if [[ "$file" == database/app_schema/$folder* ]]; then
+
+#                 if git cat-file -e \
+#                     "origin/${{ github.base_ref }}:$file" \
+#                     2>/dev/null; then
+
+#                     echo ""
+#                     echo "ERROR:"
+#                     echo "Existing structural object modified."
+#                     echo "$file"
+#                     echo ""
+#                     echo "Use changes/ folder instead."
+#                     echo ""
+
+#                     exit 1
+
+#                 fi
+
+#                 fi
+
+#             done
+
+#             done <<< "$changedFiles"
+
+#             echo ""
+#             echo "Validation Passed"
+
+#         - name: Validate Folder Structure
+#           shell: bash
+#           run: |
+
+#             echo ""
+#             echo "===== FOLDER VALIDATION ====="
+
+#             allowedFolders=(
+#             "tables"
+#             "constraints"
+#             "sequences"
+#             "indexes"
+#             "triggers"
+#             "views"
+#             "functions"
+#             "procedures"
+#             "packages"
+#             "seed_data"
+#             "changes"
+#             "rollback"
+#             )
+
+#             changedFiles=$(git diff --name-only \
+#             origin/${{ github.base_ref }} \
+#             HEAD)
+
+#             while IFS= read -r file; do
+
+#             if [[ "$file" == *.sql ]]; then
+
+#                 objectFolder=$(echo "$file" | cut -d'/' -f3)
+
+#                 if [[ ! " ${allowedFolders[*]} " =~ " ${objectFolder} " ]]; then
+
+#                 echo ""
+#                 echo "Invalid Folder:"
+#                 echo "$file"
+#                 echo ""
+
+#                 exit 1
+
+#                 fi
+
+#             fi
+
+#             done <<< "$changedFiles"
+
+#             echo ""
+#             echo "Folder Validation Passed"
+
+        
+#         - name: Generate release.sql
+#           shell: bash
+#           run: |
+
+#             python3 database/app_schema/scripts/generate_release.py
+
+
+#         - name: Show release.sql
+#           shell: bash
+#           run: |
+
+#             echo ""
+#             echo "===== GENERATED release.sql ====="
+
+#             cat release.sql
+
+#         - name: Validate release.sql
+#           shell: bash
+#           run: |
+
+#             if [ ! -f release.sql ]; then
+
+#             echo "release.sql not generated."
+
+#             exit 1
+
+#             fi
+
+#             if [ ! -s release.sql ]; then
+
+#             echo "release.sql is empty."
+
+#             exit 1
+
+#             fi
+
+#             echo ""
+#             echo "release.sql validation passed."
+
+ 
+#         - name: Validation Complete
+#           shell: bash
+#           run: |
+
+#             echo ""
+#             echo "======================================"
+#             echo "DATABASE VALIDATION PASSED"
+#             echo "======================================"
+
