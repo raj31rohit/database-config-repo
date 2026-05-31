@@ -25,6 +25,7 @@ jobs:
       DB_USER: ${{ secrets.DB_USER }}
       DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
       DB_CONNECT: "localhost:1521/XEPDB1"
+      INSTANT_CLIENT_VERSION: "21.9.0.0.0"
 
     steps:
 
@@ -41,7 +42,34 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v3
         with:
           role-to-assume: arn:aws:iam::054276329279:role/github-actions-oidc-role
-          aws-region: us-east-1  
+          aws-region: us-east-1
+
+      - name: Restore Oracle Instant Client cache
+        uses: actions/cache@v4
+        with:
+          path: $HOME/.oracle/instantclient_${{ env.INSTANT_CLIENT_VERSION }}
+          key: ${{ runner.os }}-oracle-instantclient-${{ env.INSTANT_CLIENT_VERSION }}
+
+      - name: Install Oracle Instant Client if missing
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p $HOME/.oracle
+          INST_DIR="$HOME/.oracle/instantclient_${{ env.INSTANT_CLIENT_VERSION }}"
+          sudo apt-get update -y
+          sudo apt-get install -y libaio1 unzip curl
+          if [ -d "$INST_DIR" ]; then
+            echo "Instant Client found in cache: $INST_DIR"
+          else
+            echo "Downloading Instant Client version ${{ env.INSTANT_CLIENT_VERSION }}"
+            ZIP="instantclient-basiclite-linux.x64-${{ env.INSTANT_CLIENT_VERSION }}.zip"
+            URL="https://download.oracle.com/otn_software/linux/instantclient/${ZIP}"
+            curl -fSL -o /tmp/${ZIP} -H "Cookie: oraclelicense=accept-securebackup-cookie" "$URL"
+            unzip -q /tmp/${ZIP} -d $HOME/.oracle
+            mv $HOME/.oracle/instantclient_* "$INST_DIR"
+          fi
+          echo "$INST_DIR" >> $GITHUB_PATH
+          echo "LD_LIBRARY_PATH=$INST_DIR:$LD_LIBRARY_PATH" >> $GITHUB_ENV
 
 
       # =====================================================
