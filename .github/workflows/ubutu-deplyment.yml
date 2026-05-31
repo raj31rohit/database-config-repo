@@ -319,16 +319,16 @@ jobs:
     # Execute Deployment
     # =====================================================
 
-- name: Generate Differential release.sql
-  shell: bash
-  run: |
+    - name: Generate Differential release.sql
+      shell: bash
+      run: |
 
-    python3 database/app_schema/scripts/generate_release.py
+        python3 database/app_schema/scripts/generate_release.py
 
-    echo ""
-    echo "===== GENERATED release.sql ====="
+        echo ""
+        echo "===== GENERATED release.sql ====="
 
-    cat release.sql
+        cat release.sql
 
     # =====================================================
     # Create Deployment Lock
