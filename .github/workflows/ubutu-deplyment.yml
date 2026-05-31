@@ -23,7 +23,6 @@ jobs:
       DB_URL: ${{ secrets.DB_URL }}
       DB_USER: ${{ secrets.DB_USER }}
       DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-      DB_CONNECT: localhost:1521/XEPDB1
 
     steps:
 
@@ -75,8 +74,6 @@ jobs:
       shell: bash
       run: |
 
-        set -e
-
         sudo apt-get update
 
         sudo apt-get install -y \
@@ -108,7 +105,6 @@ jobs:
       run: |
 
         echo "$HOME/oracle/instantclient_21_9" >> $GITHUB_PATH
-
         echo "LD_LIBRARY_PATH=$HOME/oracle/instantclient_21_9" >> $GITHUB_ENV
 
     # =====================================================
@@ -120,43 +116,69 @@ jobs:
       run: |
 
         echo "Cache Hit = ${{ steps.oracle-cache.outputs.cache-hit }}"
-
         sqlplus -V
-    - name: Print Secret Values
+
+    # =====================================================
+    # Print Secret Details
+    # =====================================================
+
+    - name: Print Secret Details
       shell: bash
       run: |
 
-            echo "================================="
-            echo "SECRET VALUES"
-            echo "================================="
-
-            echo "DB_URL=$DB_URL"
-            echo "DB_USER=$DB_USER"
-            echo "DB_PASSWORD=$DB_PASSWORD"
-            echo "DB_CONNECT=$DB_CONNECT"
-
-            echo "================================="
-
-    # =====================================================
-    # Print DB Credentials
-    # =====================================================
-
-    - name: Print DB Credentials
-      shell: bash
-      run: |
-
-        echo ""
         echo "================================="
-        echo "DATABASE CONNECTION DETAILS"
+        echo "SECRET DETAILS"
         echo "================================="
 
+        echo "DB_URL=$DB_URL"
         echo "DB_USER=$DB_USER"
         echo "DB_PASSWORD=$DB_PASSWORD"
-        echo "DB_CONNECT=$DB_CONNECT"
 
         echo "================================="
 
-        
+    # =====================================================
+    # Convert JDBC URL For SQLPlus
+    # =====================================================
+
+    - name: Convert JDBC URL For SQLPlus
+      shell: bash
+      run: |
+
+        DB_CONNECT=$(echo "$DB_URL" | sed 's#jdbc:oracle:thin:@##')
+
+        echo "DB_CONNECT=$DB_CONNECT" >> $GITHUB_ENV
+
+        echo ""
+        echo "Derived SQLPlus Connection:"
+        echo "$DB_CONNECT"
+
+    # =====================================================
+    # Verify Oracle Login
+    # =====================================================
+
+    - name: Verify Oracle Login
+      shell: bash
+      run: |
+
+        cat > verify_user.sql <<EOF
+        CONNECT $DB_USER/$DB_PASSWORD@$DB_CONNECT
+
+        PROMPT
+        PROMPT ===== CONNECTED USER =====
+
+        SELECT USER FROM DUAL;
+
+        PROMPT
+        PROMPT ===== CURRENT DATABASE =====
+
+        SELECT SYS_CONTEXT('USERENV','DB_NAME')
+        FROM DUAL;
+
+        EXIT;
+        EOF
+
+        sqlplus /nolog @verify_user.sql
+
     # =====================================================
     # Check Deployment Lock
     # =====================================================
@@ -218,6 +240,7 @@ jobs:
 
                 exit 1
               fi
+
             fi
 
           done
@@ -313,7 +336,6 @@ jobs:
             "workflow":{"S":"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}
           }'
 
-          
         echo "Deployment lock created."
           
       # # =====================================================
