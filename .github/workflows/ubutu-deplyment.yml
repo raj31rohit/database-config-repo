@@ -57,7 +57,18 @@ jobs:
           mkdir -p $HOME/.oracle
           INST_DIR="$HOME/.oracle/instantclient_${{ env.INSTANT_CLIENT_VERSION }}"
           sudo apt-get update -y
-          sudo apt-get install -y libaio1 unzip curl
+          sudo apt-get install -y unzip curl || true
+
+          # Try installing libaio1, fall back to libaio or download .deb if not available
+          if ! sudo apt-get install -y libaio1; then
+            echo "libaio1 not available via apt, trying libaio..."
+            if ! sudo apt-get install -y libaio; then
+              echo "libaio not available; attempting to download libaio1 .deb"
+              LIBAIO_DEB="https://mirrors.kernel.org/ubuntu/pool/main/liba/libaio/libaio1_0.3.113-1_amd64.deb"
+              curl -fSL -o /tmp/libaio1.deb "$LIBAIO_DEB"
+              sudo dpkg -i /tmp/libaio1.deb || sudo apt-get -f install -y
+            fi
+          fi
           if [ -d "$INST_DIR" ]; then
             echo "Instant Client found in cache: $INST_DIR"
           else
