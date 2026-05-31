@@ -1,0 +1,434 @@
+name: DB Deployment
+
+on:
+  push:
+    branches:
+      - develop
+      - qa
+      - main
+
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+
+  deploy-db:
+
+    runs-on: ubuntu-latest
+
+    environment: PROD
+
+    env:
+      DB_URL: ${{ secrets.DB_URL }}
+      DB_USER: ${{ secrets.DB_USER }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      DB_CONNECT: "localhost:1521/XEPDB1"
+
+    steps:
+
+      # =====================================================
+      # Checkout Repository
+      # =====================================================
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials using GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          role-to-assume: arn:aws:iam::054276329279:role/github-actions-oidc-role
+          aws-region: us-east-1  
+
+
+      # =====================================================
+      # Debug Environment Selection
+      # =====================================================
+
+      - name: Debug Environment Selection
+        shell: bash
+        run: |
+          echo "Branch Name = ${{ github.ref_name }}"
+
+          if [[ "${{ github.ref_name }}" == "develop" ]]; then
+            echo "Matched DEV environment"
+          elif [[ "${{ github.ref_name }}" == "qa" ]]; then
+            echo "Matched QA environment"
+          elif [[ "${{ github.ref_name }}" == "main" ]]; then
+            echo "Matched PROD environment"
+          else
+            echo "No branch match found"
+          fi
+
+          if [[ -n "$DB_URL" ]]; then
+            echo "DB_URL exists"
+          else
+            echo "DB_URL missing"
+            exit 1
+          fi
+
+
+      # =====================================================
+      # Validate Structural Object Modifications
+      # =====================================================
+      - name: Validate Structural Object Modifications
+        shell: bash
+        run: |
+          restrictedFolders=(
+            "tables/"
+            "constraints/"
+            "indexes/"
+            "sequences/"
+          )
+
+          changedFiles=$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")
+
+          while IFS= read -r file; do
+            for folder in "${restrictedFolders[@]}"; do
+              if [[ "$file" == *"$folder"* ]]; then
+                if git cat-file -e "${{ github.event.before }}:$file" 2>/dev/null; then
+                  echo ""
+                  echo "ERROR:"
+                  echo "Existing structural object modified -> $file"
+                  echo ""
+                  echo "Do NOT modify deployed structural objects."
+                  echo "Create separate ALTER/change script instead."
+                  echo ""
+                  exit 1
+                fi
+              fi
+            done
+          done <<< "$changedFiles"
+
+          echo ""
+          echo "Structural object validation successful."
+
+      # =====================================================
+      # Generate release.sql From manifest.yml
+      # =====================================================
+
+      - name: Generate Differential release.sql
+        shell: bash
+        run: |
+          manifestPath="database/app_schema/deployment/manifest.yml"
+          releaseFile="release.sql"
+
+          rm -f "$releaseFile"
+          touch "$releaseFile"
+
+          if [[ "${{ github.event.before }}" == "0000000000000000000000000000000000000000" ]]; then
+            echo "Initial deployment detected."
+            changedFiles=$(git ls-files)
+          else
+            changedFiles=$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")
+          fi
+
+          echo "===== CHANGED FILES ====="
+          echo "$changedFiles"
+
+          while IFS= read -r line; do
+            if [[ "$line" =~ ^[[:space:]]*-[[:space:]]*(.*) ]]; then
+              manifestFile="${BASH_REMATCH[1]}"
+              fullPath="database/app_schema/$manifestFile"
+              if grep -Fxq "$fullPath" <<< "$changedFiles"; then
+                echo "@@$fullPath" >> "$releaseFile"
+                echo "Added To release.sql -> $fullPath"
+              fi
+            fi
+          done < "$manifestPath"
+
+          echo "===== GENERATED release.sql ====="
+          cat "$releaseFile"
+
+    #   - name: Generate Differential release.sql
+    #     shell: powershell
+    #     run: |
+
+    #       $manifestPath = "database/app_schema/deployment/manifest.yml"
+    #       $releaseFile = "release.sql"
+
+    #       if (Test-Path $releaseFile) {
+    #         Remove-Item $releaseFile
+    #       }
+
+    #       New-Item `
+    #         -Path $releaseFile `
+    #         -ItemType File `
+    #         -Force
+
+    #       # =====================================================
+    #       # Get Changed Files
+    #       # =====================================================
+
+    #       $commitCount = git rev-list --count HEAD
+
+    #       if ($commitCount -eq 1) {
+
+    #         Write-Host "First commit detected."
+
+    #         $changedFiles = git ls-files
+    #       }
+    #       else {
+
+    #         $changedFiles = git diff --name-only HEAD^ HEAD
+    #       }
+
+    #       Write-Host "===== CHANGED FILES ====="
+
+    #       $changedFiles | ForEach-Object {
+    #         Write-Host $_
+    #       }
+
+    #       # =====================================================
+    #       # Read Manifest
+    #       # =====================================================
+
+    #       $manifestLines = Get-Content $manifestPath
+
+    #       foreach ($line in $manifestLines) {
+
+    #         if ($line -match "^\s*-\s*(.*)") {
+
+    #           $manifestFile = $matches[1].Trim()
+
+    #           $fullPath = "database/app_schema/$manifestFile"
+
+    #           # =====================================================
+    #           # Include Only Changed Files
+    #           # =====================================================
+
+    #           if ($changedFiles -contains $fullPath) {
+
+    #             Add-Content `
+    #               -Path $releaseFile `
+    #               -Value "@@$fullPath"
+
+    #             Write-Host "Added To release.sql -> $fullPath"
+    #           }
+    #         }
+    #       }
+
+    #       Write-Host "===== GENERATED release.sql ====="
+
+    #       Get-Content $releaseFile
+
+
+    #   - name: Generate release.sql
+    #     shell: powershell
+    #     run: |
+
+    #       $manifestPath = "database/app_schema/deployment/manifest.yml"
+    #       $releaseFile = "release.sql"
+
+    #       if (Test-Path $releaseFile) {
+    #         Remove-Item $releaseFile
+    #       }
+
+    #       New-Item `
+    #         -Path $releaseFile `
+    #         -ItemType File `
+    #         -Force
+
+    #       $lines = Get-Content $manifestPath
+
+    #       foreach ($line in $lines) {
+
+    #         if ($line -match "^\s*-\s*(.*)") {
+
+    #           $file = $matches[1].Trim()
+
+    #           Add-Content `
+    #             -Path $releaseFile `
+    #             -Value "@@database/app_schema/$file"
+    #         }
+    #       }
+
+    #       Write-Host "===== GENERATED release.sql ====="
+
+    #       Get-Content $releaseFile
+
+          # =====================================================
+      # Check Deployment Lock
+      # =====================================================
+
+      - name: Check Deployment Lock
+        shell: powershell
+        run: |
+
+          $branch = "${{ github.ref_name }}"
+
+          $result = aws dynamodb get-item `
+            --table-name deployment_lock `
+            --key "{\""branch_name\"": {\""S\"": \""$branch\""}}"
+
+          Write-Host $result
+
+          if ($result -match "LOCKED") {
+
+            Write-Host ""
+            Write-Host "================================================="
+            Write-Host "DEPLOYMENT LOCK DETECTED"
+            Write-Host "================================================="
+            Write-Host ""
+            Write-Host "Previous deployment failed."
+            Write-Host "Manual intervention required."
+            Write-Host ""
+
+            exit 1
+          }
+
+          Write-Host "No deployment lock found."
+
+      # =====================================================
+      # Execute Deployment
+      # =====================================================
+
+      - name: Execute release.sql
+        shell: powershell
+        run: |
+
+          @"
+          CONNECT $env:DB_USER/$env:DB_PASSWORD@$env:DB_CONNECT
+
+          SET ECHO ON
+          SET SERVEROUTPUT ON
+
+          @release.sql
+
+          EXIT;
+          "@ | Out-File run_release.sql -Encoding ascii
+
+          Write-Host ""
+          Write-Host "===== run_release.sql ====="
+
+          Get-Content run_release.sql
+
+          sqlplus /nolog "@run_release.sql"
+
+      # =====================================================
+      # Create Deployment Lock On Failure
+      # =====================================================
+
+      - name: Create Deployment Lock
+        if: failure()
+        shell: powershell
+        run: |
+
+          New-Item `
+            -Path "deployment.lock" `
+            -ItemType File `
+            -Force
+
+          @"
+          =================================================
+          DEPLOYMENT FAILED
+          =================================================
+
+          Branch:
+          ${{ github.ref_name }}
+
+          Commit:
+          ${{ github.sha }}
+
+          Workflow:
+          ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          Partial deployment may exist.
+
+          Manual intervention required.
+          "@ | Out-File deployment.lock
+
+          Write-Host ""
+          Write-Host "Deployment lock created."
+
+          # =====================================================
+      # Create Deployment Lock
+      # =====================================================
+
+      - name: Create Deployment Lock
+        if: failure()
+        shell: powershell
+        run: |
+
+          $branch = "${{ github.ref_name }}"
+
+          aws dynamodb put-item `
+            --table-name deployment_lock `
+            --item "{
+              \""branch_name\"": {\""S\"": \""$branch\""},
+              \""lock_status\"": {\""S\"": \""LOCKED\""},
+              \""failed_commit\"": {\""S\"": \""${{ github.sha }}\""},
+              \""workflow\"": {\""S\"": \""${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\""}
+            }"
+
+          Write-Host ""
+          Write-Host "Deployment lock created in DynamoDB."
+          
+      # # =====================================================
+      # # Execute Deployment
+      # # =====================================================
+
+      # - name: Execute release.sql
+      #   shell: powershell
+      #   run: |
+
+      #       @"
+      #       CONNECT $env:DB_USER/$env:DB_PASSWORD@$env:DB_CONNECT
+
+      #       @release.sql
+
+      #       EXIT;
+      #       "@ | Out-File run_release.sql -Encoding ascii
+
+      #       Write-Host "===== run_release.sql ====="
+
+      #       Get-Content run_release.sql
+
+      #       sqlplus /nolog "@run_release.sql"
+
+      # =====================================================
+      # Compile Invalid Objects
+      # =====================================================
+
+    #   - name: Compile Invalid Objects
+    #     shell: powershell
+    #     run: |
+
+    #       @"
+    #       BEGIN
+    #         DBMS_UTILITY.compile_schema(
+    #           schema => 'APP_SCHEMA'
+    #         );
+    #       END;
+    #       /
+    #       EXIT;
+    #       "@ | Out-File compile.sql
+
+    #         sqlplus `
+    #         "$env:DB_USER/$env:DB_PASSWORD@$env:DB_CONNECT" `
+    #         "@/compile.sql"
+
+    #   # =====================================================
+    #   # Validate Invalid Objects
+    #   # =====================================================
+
+    #   - name: Validate Invalid Objects
+    #     shell: powershell
+    #     run: |
+
+    #       @"
+    #       SET HEADING OFF;
+    #       SET FEEDBACK OFF;
+
+    #       SELECT object_name || ' - ' || object_type
+    #       FROM user_objects
+    #       WHERE status = 'INVALID';
+
+    #       EXIT;
+    #       "@ | Out-File validate_invalid.sql
+
+    #       sqlplus `
+    #         -s `
+    #         $env:DB_USER/$env:DB_PASSWORD@$env:DB_URL `
+    #         @validate_invalid.sql
