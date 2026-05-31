@@ -20,9 +20,13 @@ jobs:
     environment: PROD
 
     env:
-      DB_URL: ${{ secrets.DB_URL }}
-      DB_USER: ${{ secrets.DB_USER }}
-      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        DB_URL: jdbc:oracle:thin:@oracle-xe:1521/XEPDB1
+        DB_USER: APP_USER
+        DB_PASSWORD: app123
+            # env:
+    #   DB_URL: ${{ secrets.DB_URL }}
+    #   DB_USER: ${{ secrets.DB_USER }}
+    #   DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
 
     steps:
 
