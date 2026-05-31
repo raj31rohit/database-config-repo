@@ -1,444 +1,58 @@
-# name: Oracle DB Deployment
-
-# on:
-#   push:
-#     branches:
-#       - develop
-#       - qa
-#       - main
-
-# permissions:
-#   contents: read
-#   id-token: write
-
-# jobs:
-
-#   deploy-db:
-
-#     runs-on: ubuntu-22.04
-
-#     environment: PROD
-
-#     env:
-#       DB_URL: ${{ secrets.DB_URL }}
-#       DB_USER: ${{ secrets.DB_USER }}
-#       DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-
-#     steps:
-
-#     # =====================================================
-#     # Checkout Repository
-#     # =====================================================
-
-#     - name: Checkout Repository
-#       uses: actions/checkout@v4
-#       with:
-#         fetch-depth: 0
-
-#     # =====================================================
-#     # Configure AWS Credentials
-#     # =====================================================
-
-#     - name: Configure AWS credentials
-#       uses: aws-actions/configure-aws-credentials@v4
-#       with:
-#         role-to-assume: arn:aws:iam::054276329279:role/github-actions-oidc-role
-#         aws-region: us-east-1
-
-#     # =====================================================
-#     # Setup Python
-#     # =====================================================
-
-#     - name: Setup Python
-#       uses: actions/setup-python@v5
-#       with:
-#         python-version: '3.12'
-
-#     # =====================================================
-#     # Restore Oracle Cache
-#     # =====================================================
-
-#     - name: Restore Oracle Instant Client Cache
-#       id: oracle-cache
-#       uses: actions/cache@v4
-#       with:
-#         path: $HOME/oracle
-#         key: oracle-instantclient-21.9
-
-#     # =====================================================
-#     # Install Oracle Instant Client
-#     # =====================================================
-
-#     - name: Install Oracle Instant Client
-#       if: steps.oracle-cache.outputs.cache-hit != 'true'
-#       shell: bash
-#       run: |
-
-#         sudo apt-get update
-
-#         sudo apt-get install -y \
-#           unzip \
-#           curl \
-#           libaio1
-
-#         mkdir -p $HOME/oracle
-
-#         cd /tmp
-
-#         curl -L \
-#           -o basiclite.zip \
-#           https://download.oracle.com/otn_software/linux/instantclient/219000/instantclient-basiclite-linux.x64-21.9.0.0.0dbru.zip
-
-#         curl -L \
-#           -o sqlplus.zip \
-#           https://download.oracle.com/otn_software/linux/instantclient/219000/instantclient-sqlplus-linux.x64-21.9.0.0.0dbru.zip
-
-#         unzip -o basiclite.zip -d $HOME/oracle
-#         unzip -o sqlplus.zip -d $HOME/oracle
-
-#     # =====================================================
-#     # Configure Oracle Environment
-#     # =====================================================
-
-#     - name: Configure Oracle Environment
-#       shell: bash
-#       run: |
-
-#         echo "$HOME/oracle/instantclient_21_9" >> $GITHUB_PATH
-#         echo "LD_LIBRARY_PATH=$HOME/oracle/instantclient_21_9" >> $GITHUB_ENV
-
-#     # =====================================================
-#     # Verify SQLPlus
-#     # =====================================================
-
-#     - name: Verify SQLPlus
-#       shell: bash
-#       run: |
-
-#         echo "Cache Hit = ${{ steps.oracle-cache.outputs.cache-hit }}"
-#         sqlplus -V
-
-#     # =====================================================
-#     # Print Secret Details
-#     # =====================================================
-
-#     - name: Print Secret Details
-#       shell: bash
-#       run: |
-
-#         echo "================================="
-#         echo "SECRET DETAILS"
-#         echo "================================="
-
-#         echo "DB_URL=$DB_URL"
-#         echo "DB_USER=$DB_USER"
-#         echo "DB_PASSWORD=$DB_PASSWORD"
-
-#         echo "================================="
-
-#     # =====================================================
-#     # Convert JDBC URL For SQLPlus
-#     # =====================================================
-
-#     - name: Convert JDBC URL For SQLPlus
-#       shell: bash
-#       run: |
-
-#         DB_CONNECT=$(echo "$DB_URL" | sed 's#jdbc:oracle:thin:@##')
-
-#         echo "DB_CONNECT=$DB_CONNECT" >> $GITHUB_ENV
-
-#         echo ""
-#         echo "Derived SQLPlus Connection:"
-#         echo "$DB_CONNECT"
-
-#     - name: Debug Connection String
-#       shell: bash
-#       run: |
-
-#         DB_CONNECT=$(echo "$DB_URL" | sed 's#jdbc:oracle:thin:@##')
-
-#         echo "DB_CONNECT=$DB_CONNECT"
-
-#         nslookup host.docker.internal || true
-
-#         ping -c 2 host.docker.internal || true
-
-
-#     # =====================================================
-#     # Verify Oracle Login
-#     # =====================================================
-
-#     - name: Verify Oracle Login
-#       shell: bash
-#       run: |
-
-#         cat > verify_user.sql <<EOF
-#         CONNECT $DB_USER/$DB_PASSWORD@$DB_CONNECT
-
-#         PROMPT
-#         PROMPT ===== CONNECTED USER =====
-
-#         SELECT USER FROM DUAL;
-
-#         PROMPT
-#         PROMPT ===== CURRENT DATABASE =====
-
-#         SELECT SYS_CONTEXT('USERENV','DB_NAME')
-#         FROM DUAL;
-
-#         EXIT;
-#         EOF
-
-#         sqlplus /nolog @verify_user.sql
-
-#     # =====================================================
-#     # Check Deployment Lock
-#     # =====================================================
-
-#     - name: Check Deployment Lock
-#       shell: bash
-#       run: |
-
-#         branch="${{ github.ref_name }}"
-
-#         result=$(aws dynamodb get-item \
-#           --table-name deployment_lock \
-#           --key '{"branch_name":{"S":"'"$branch"'"}}' || true)
-
-#         if [[ "$result" == *"LOCKED"* ]]; then
-
-#           echo ""
-#           echo "DEPLOYMENT LOCK DETECTED"
-#           echo ""
-
-#           exit 1
-#         fi
-
-#         echo "No deployment lock found."
-
-#     # =====================================================
-#     # Validate Structural Object Modifications
-#     # =====================================================
-
-#     - name: Validate Structural Object Modifications
-#       shell: bash
-#       run: |
-
-#         restrictedFolders=(
-#           "tables/"
-#           "constraints/"
-#           "indexes/"
-#           "sequences/"
-#         )
-
-#         changedFiles=$(git diff --name-only \
-#           "${{ github.event.before }}" \
-#           "${{ github.sha }}")
-
-#         while IFS= read -r file; do
-
-#           for folder in "${restrictedFolders[@]}"; do
-
-#             if [[ "$file" == *"$folder"* ]]; then
-
-#               if git cat-file -e \
-#                 "${{ github.event.before }}:$file" \
-#                 2>/dev/null; then
-
-#                 echo ""
-#                 echo "ERROR:"
-#                 echo "Existing structural object modified -> $file"
-#                 echo ""
-
-#                 exit 1
-#               fi
-
-#             fi
-
-#           done
-
-#         done <<< "$changedFiles"
-
-#     # =====================================================
-#     # Generate release.sql
-#     # =====================================================
-
-#     - name: Generate Differential release.sql
-#       shell: bash
-#       run: |
-
-#         manifestPath="database/app_schema/deployment/manifest.yml"
-#         releaseFile="release.sql"
-
-#         rm -f "$releaseFile"
-
-#         touch "$releaseFile"
-
-#         changedFiles=$(git diff --name-only \
-#           "${{ github.event.before }}" \
-#           "${{ github.sha }}")
-
-#         while IFS= read -r line; do
-
-#           if [[ "$line" =~ ^[[:space:]]*-[[:space:]]*(.*) ]]; then
-
-#             manifestFile="${BASH_REMATCH[1]}"
-
-#             fullPath="database/app_schema/$manifestFile"
-
-#             if grep -Fxq "$fullPath" <<< "$changedFiles"; then
-
-#               echo "@@$fullPath" >> "$releaseFile"
-
-#               echo "Added -> $fullPath"
-
-#             fi
-#           fi
-
-#         done < "$manifestPath"
-
-#         echo ""
-#         echo "===== GENERATED release.sql ====="
-
-#         cat "$releaseFile"
-
-#     # =====================================================
-#     # Execute Deployment
-#     # =====================================================
-
-#     - name: Execute release.sql
-#       shell: bash
-#       run: |
-
-#         cat > run_release.sql <<EOF
-#         CONNECT $DB_USER/$DB_PASSWORD@$DB_CONNECT
-
-#         SET ECHO ON
-#         SET SERVEROUTPUT ON
-
-#         @release.sql
-
-#         EXIT;
-#         EOF
-
-#         echo ""
-#         echo "===== run_release.sql ====="
-
-#         cat run_release.sql
-
-#         sqlplus /nolog @run_release.sql
-
-#     # =====================================================
-#     # Create Deployment Lock
-#     # =====================================================
-
-#     - name: Create Deployment Lock
-#       if: failure()
-#       shell: bash
-#       run: |
-
-#         branch="${{ github.ref_name }}"
-
-#         aws dynamodb put-item \
-#           --table-name deployment_lock \
-#           --item '{
-#             "branch_name":{"S":"'"$branch"'"},
-#             "lock_status":{"S":"LOCKED"},
-#             "failed_commit":{"S":"${{ github.sha }}"},
-#             "workflow":{"S":"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}
-#           }'
-
-#         echo "Deployment lock created."
-          
-#       # # =====================================================
-#       # # Execute Deployment
-#       # # =====================================================
-
-#       # - name: Execute release.sql
-#       #   shell: powershell
-#       #   run: |
-
-#       #       @"
-#       #       CONNECT $env:DB_USER/$env:DB_PASSWORD@$env:DB_CONNECT
-
-#       #       @release.sql
-
-#       #       EXIT;
-#       #       "@ | Out-File run_release.sql -Encoding ascii
-
-#       #       Write-Host "===== run_release.sql ====="
-
-#       #       Get-Content run_release.sql
-
-#       #       sqlplus /nolog "@run_release.sql"
-
-#       # =====================================================
-#       # Compile Invalid Objects
-#       # =====================================================
-
-#     #   - name: Compile Invalid Objects
-#     #     shell: powershell
-#     #     run: |
-
-#     #       @"
-#     #       BEGIN
-#     #         DBMS_UTILITY.compile_schema(
-#     #           schema => 'APP_SCHEMA'
-#     #         );
-#     #       END;
-#     #       /
-#     #       EXIT;
-#     #       "@ | Out-File compile.sql
-
-#     #         sqlplus `
-#     #         "$env:DB_USER/$env:DB_PASSWORD@$env:DB_CONNECT" `
-#     #         "@/compile.sql"
-
-#     #   # =====================================================
-#     #   # Validate Invalid Objects
-#     #   # =====================================================
-
-#     #   - name: Validate Invalid Objects
-#     #     shell: powershell
-#     #     run: |
-
-#     #       @"
-#     #       SET HEADING OFF;
-#     #       SET FEEDBACK OFF;
-
-#     #       SELECT object_name || ' - ' || object_type
-#     #       FROM user_objects
-#     #       WHERE status = 'INVALID';
-
-#     #       EXIT;
-#     #       "@ | Out-File validate_invalid.sql
-
-#     #       sqlplus `
-#     #         -s `
-#     #         $env:DB_USER/$env:DB_PASSWORD@$env:DB_URL `
-#     #         @validate_invalid.sql
-
-
-
-
-name: Test Oracle Connection
+name: Oracle DB Deployment
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - develop
+      - qa
+      - main
+
+permissions:
+  contents: read
+  id-token: write
 
 jobs:
 
-  test-db:
+  deploy-db:
 
-    runs-on: self-hosted
+    runs-on: ubuntu-22.04
+
+    environment: PROD
 
     env:
-      DB_USER: APP_USER
-      DB_PASSWORD: app123
-      DB_CONNECT: oracle-xe:1521/XEPDB1
+      DB_URL: ${{ secrets.DB_URL }}
+      DB_USER: ${{ secrets.DB_USER }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
 
     steps:
+
+    # =====================================================
+    # Checkout Repository
+    # =====================================================
+
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    # =====================================================
+    # Configure AWS Credentials
+    # =====================================================
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::054276329279:role/github-actions-oidc-role
+        aws-region: us-east-1
+
+    # =====================================================
+    # Setup Python
+    # =====================================================
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
 
     # =====================================================
     # Restore Oracle Cache
@@ -501,33 +115,63 @@ jobs:
       shell: bash
       run: |
 
-        export PATH="$HOME/oracle/instantclient_21_9:$PATH"
-        export LD_LIBRARY_PATH="$HOME/oracle/instantclient_21_9"
-
+        echo "Cache Hit = ${{ steps.oracle-cache.outputs.cache-hit }}"
         sqlplus -V
 
     # =====================================================
-    # Test DNS Resolution
+    # Print Secret Details
     # =====================================================
 
-    - name: Verify Oracle Container Resolution
+    - name: Print Secret Details
       shell: bash
       run: |
 
-        getent hosts oracle-xe || true
+        echo "================================="
+        echo "SECRET DETAILS"
+        echo "================================="
 
-        ping -c 3 oracle-xe || true
+        echo "DB_URL=$DB_URL"
+        echo "DB_USER=$DB_USER"
+        echo "DB_PASSWORD=$DB_PASSWORD"
+
+        echo "================================="
 
     # =====================================================
-    # Test Oracle Login
+    # Convert JDBC URL For SQLPlus
+    # =====================================================
+
+    - name: Convert JDBC URL For SQLPlus
+      shell: bash
+      run: |
+
+        DB_CONNECT=$(echo "$DB_URL" | sed 's#jdbc:oracle:thin:@##')
+
+        echo "DB_CONNECT=$DB_CONNECT" >> $GITHUB_ENV
+
+        echo ""
+        echo "Derived SQLPlus Connection:"
+        echo "$DB_CONNECT"
+
+    - name: Debug Connection String
+      shell: bash
+      run: |
+
+        DB_CONNECT=$(echo "$DB_URL" | sed 's#jdbc:oracle:thin:@##')
+
+        echo "DB_CONNECT=$DB_CONNECT"
+
+        nslookup host.docker.internal || true
+
+        ping -c 2 host.docker.internal || true
+
+        
+    # =====================================================
+    # Verify Oracle Login
     # =====================================================
 
     - name: Verify Oracle Login
       shell: bash
       run: |
-
-        export PATH="$HOME/oracle/instantclient_21_9:$PATH"
-        export LD_LIBRARY_PATH="$HOME/oracle/instantclient_21_9"
 
         cat > verify_user.sql <<EOF
         CONNECT $DB_USER/$DB_PASSWORD@$DB_CONNECT
@@ -538,7 +182,7 @@ jobs:
         SELECT USER FROM DUAL;
 
         PROMPT
-        PROMPT ===== DATABASE =====
+        PROMPT ===== CURRENT DATABASE =====
 
         SELECT SYS_CONTEXT('USERENV','DB_NAME')
         FROM DUAL;
@@ -547,3 +191,230 @@ jobs:
         EOF
 
         sqlplus /nolog @verify_user.sql
+
+    # =====================================================
+    # Check Deployment Lock
+    # =====================================================
+
+    - name: Check Deployment Lock
+      shell: bash
+      run: |
+
+        branch="${{ github.ref_name }}"
+
+        result=$(aws dynamodb get-item \
+          --table-name deployment_lock \
+          --key '{"branch_name":{"S":"'"$branch"'"}}' || true)
+
+        if [[ "$result" == *"LOCKED"* ]]; then
+
+          echo ""
+          echo "DEPLOYMENT LOCK DETECTED"
+          echo ""
+
+          exit 1
+        fi
+
+        echo "No deployment lock found."
+
+    # =====================================================
+    # Validate Structural Object Modifications
+    # =====================================================
+
+    - name: Validate Structural Object Modifications
+      shell: bash
+      run: |
+
+        restrictedFolders=(
+          "tables/"
+          "constraints/"
+          "indexes/"
+          "sequences/"
+        )
+
+        changedFiles=$(git diff --name-only \
+          "${{ github.event.before }}" \
+          "${{ github.sha }}")
+
+        while IFS= read -r file; do
+
+          for folder in "${restrictedFolders[@]}"; do
+
+            if [[ "$file" == *"$folder"* ]]; then
+
+              if git cat-file -e \
+                "${{ github.event.before }}:$file" \
+                2>/dev/null; then
+
+                echo ""
+                echo "ERROR:"
+                echo "Existing structural object modified -> $file"
+                echo ""
+
+                exit 1
+              fi
+
+            fi
+
+          done
+
+        done <<< "$changedFiles"
+
+    # =====================================================
+    # Generate release.sql
+    # =====================================================
+
+    - name: Generate Differential release.sql
+      shell: bash
+      run: |
+
+        manifestPath="database/app_schema/deployment/manifest.yml"
+        releaseFile="release.sql"
+
+        rm -f "$releaseFile"
+
+        touch "$releaseFile"
+
+        changedFiles=$(git diff --name-only \
+          "${{ github.event.before }}" \
+          "${{ github.sha }}")
+
+        while IFS= read -r line; do
+
+          if [[ "$line" =~ ^[[:space:]]*-[[:space:]]*(.*) ]]; then
+
+            manifestFile="${BASH_REMATCH[1]}"
+
+            fullPath="database/app_schema/$manifestFile"
+
+            if grep -Fxq "$fullPath" <<< "$changedFiles"; then
+
+              echo "@@$fullPath" >> "$releaseFile"
+
+              echo "Added -> $fullPath"
+
+            fi
+          fi
+
+        done < "$manifestPath"
+
+        echo ""
+        echo "===== GENERATED release.sql ====="
+
+        cat "$releaseFile"
+
+    # =====================================================
+    # Execute Deployment
+    # =====================================================
+
+    - name: Execute release.sql
+      shell: bash
+      run: |
+
+        cat > run_release.sql <<EOF
+        CONNECT $DB_USER/$DB_PASSWORD@$DB_CONNECT
+
+        SET ECHO ON
+        SET SERVEROUTPUT ON
+
+        @release.sql
+
+        EXIT;
+        EOF
+
+        echo ""
+        echo "===== run_release.sql ====="
+
+        cat run_release.sql
+
+        sqlplus /nolog @run_release.sql
+
+    # =====================================================
+    # Create Deployment Lock
+    # =====================================================
+
+    - name: Create Deployment Lock
+      if: failure()
+      shell: bash
+      run: |
+
+        branch="${{ github.ref_name }}"
+
+        aws dynamodb put-item \
+          --table-name deployment_lock \
+          --item '{
+            "branch_name":{"S":"'"$branch"'"},
+            "lock_status":{"S":"LOCKED"},
+            "failed_commit":{"S":"${{ github.sha }}"},
+            "workflow":{"S":"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}
+          }'
+
+        echo "Deployment lock created."
+          
+      # # =====================================================
+      # # Execute Deployment
+      # # =====================================================
+
+      # - name: Execute release.sql
+      #   shell: powershell
+      #   run: |
+
+      #       @"
+      #       CONNECT $env:DB_USER/$env:DB_PASSWORD@$env:DB_CONNECT
+
+      #       @release.sql
+
+      #       EXIT;
+      #       "@ | Out-File run_release.sql -Encoding ascii
+
+      #       Write-Host "===== run_release.sql ====="
+
+      #       Get-Content run_release.sql
+
+      #       sqlplus /nolog "@run_release.sql"
+
+      # =====================================================
+      # Compile Invalid Objects
+      # =====================================================
+
+    #   - name: Compile Invalid Objects
+    #     shell: powershell
+    #     run: |
+
+    #       @"
+    #       BEGIN
+    #         DBMS_UTILITY.compile_schema(
+    #           schema => 'APP_SCHEMA'
+    #         );
+    #       END;
+    #       /
+    #       EXIT;
+    #       "@ | Out-File compile.sql
+
+    #         sqlplus `
+    #         "$env:DB_USER/$env:DB_PASSWORD@$env:DB_CONNECT" `
+    #         "@/compile.sql"
+
+    #   # =====================================================
+    #   # Validate Invalid Objects
+    #   # =====================================================
+
+    #   - name: Validate Invalid Objects
+    #     shell: powershell
+    #     run: |
+
+    #       @"
+    #       SET HEADING OFF;
+    #       SET FEEDBACK OFF;
+
+    #       SELECT object_name || ' - ' || object_type
+    #       FROM user_objects
+    #       WHERE status = 'INVALID';
+
+    #       EXIT;
+    #       "@ | Out-File validate_invalid.sql
+
+    #       sqlplus `
+    #         -s `
+    #         $env:DB_USER/$env:DB_PASSWORD@$env:DB_URL `
+    #         @validate_invalid.sql
