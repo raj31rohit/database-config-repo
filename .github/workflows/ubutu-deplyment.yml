@@ -84,6 +84,13 @@ jobs:
           fi
           echo "$INST_DIR" >> $GITHUB_PATH
           echo "LD_LIBRARY_PATH=$INST_DIR:$LD_LIBRARY_PATH" >> $GITHUB_ENV
+          # Verify sqlplus exists; if not, set fallback to Docker
+          if ! command -v sqlplus >/dev/null 2>&1; then
+            echo "sqlplus not found after Instant Client install; will use Docker fallback"
+            echo "USE_DOCKER=true" >> $GITHUB_ENV
+          else
+            echo "USE_DOCKER=false" >> $GITHUB_ENV
+          fi
 
 
       # =====================================================
