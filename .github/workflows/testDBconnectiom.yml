@@ -57,6 +57,7 @@ jobs:
 
         unzip -o basiclite.zip -d $HOME/oracle
         unzip -o sqlplus.zip -d $HOME/oracle
+        
 
     # =====================================================
     # Configure Oracle Environment
