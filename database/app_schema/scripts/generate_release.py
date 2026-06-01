@@ -25,23 +25,41 @@ DEPLOYMENT_LIST = "deployment_list.txt"
 # Get Changed Files
 # =====================================================
 
-try:
+
+MODE = os.getenv("DEPLOY_MODE", "VALIDATION")
+
+print(f"MODE = {MODE}")
+
+if MODE == "VALIDATION":
 
     base_branch = subprocess.check_output(
         ["git", "merge-base", "HEAD", "origin/main"]
     ).decode().strip()
 
-except Exception:
+    changed_files = subprocess.check_output(
+        ["git", "diff", "--name-only", base_branch, "HEAD"]
+    ).decode().splitlines()
 
-    # Fallback for direct push deployment
+else:
 
-    base_branch = subprocess.check_output(
-        ["git", "rev-parse", "HEAD~1"]
-    ).decode().strip()
+    changed_files = subprocess.check_output(
+        [
+            "git",
+            "diff-tree",
+            "--no-commit-id",
+            "--name-only",
+            "-r",
+            "HEAD"
+        ]
+    ).decode().splitlines()
 
-changed_files = subprocess.check_output(
-    ["git", "diff", "--name-only", base_branch, "HEAD"]
-).decode().splitlines()
+print("")
+print("===== CHANGED FILES =====")
+
+for file in changed_files:
+    print(file)
+
+print("")
 
 # =====================================================
 # Filter SQL Files
