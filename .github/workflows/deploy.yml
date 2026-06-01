@@ -56,7 +56,8 @@ jobs:
       run: |
 
         echo "/opt/oracle/instantclient_21_9" >> $GITHUB_PATH
-        echo "LD_LIBRARY_PATH=/opt/oracle/instantclient_21_9" >> $GITHUB_ENV
+        # echo "LD_LIBRARY_PATH=/opt/oracle/instantclient_21_9" >> $GITHUB_ENV
+        echo "LD_LIBRARY_PATH=/opt/oracle/instantclient_21_9:$LD_LIBRARY_PATH" >> $GITHUB_ENV
 
     # =====================================================
     # Verify SQLPlus
