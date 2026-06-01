@@ -9,6 +9,11 @@ on:
       - qa
       - main
 
+# Cancel the in-progress validation run when a new commit is pushed to the PR.
+concurrency:
+  group: validate-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   id-token: write

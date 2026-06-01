@@ -11,13 +11,20 @@ permissions:
   contents: read
   id-token: write
 
+# Prevent concurrent deployments to the same branch/environment.
+# cancel-in-progress: false queues the next run instead of cancelling it.
+concurrency:
+  group: deploy-${{ github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
 
   deploy-db:
 
     runs-on: self-hosted
 
-    environment: PROD
+    environment:
+      name: ${{ github.ref_name == 'main' && 'PROD' || github.ref_name == 'qa' && 'QA' || 'DEV' }}
 
     env:
       DB_URL: ${{ secrets.DB_URL }}
@@ -108,6 +115,24 @@ jobs:
         echo "DB_CONNECT=$DB_CONNECT" >> $GITHUB_ENV
 
     # =====================================================
+    # Resolve Environment Name
+    # =====================================================
+
+    - name: Set Environment Name
+      shell: bash
+      run: |
+
+        case "${{ github.ref_name }}" in
+          main)    echo "ENV_NAME=PROD" >> $GITHUB_ENV ;;
+          qa)      echo "ENV_NAME=QA"   >> $GITHUB_ENV ;;
+          develop) echo "ENV_NAME=DEV"  >> $GITHUB_ENV ;;
+          *)
+            echo "Unknown branch: ${{ github.ref_name }}"
+            exit 1
+            ;;
+        esac
+
+    # =====================================================
     # Check Deployment Lock
     # =====================================================
 
@@ -120,7 +145,7 @@ jobs:
 
         LOCK_STATUS=$(aws dynamodb get-item \
           --table-name $LOCK_TABLE \
-          --key '{"environment":{"S":"PROD"}}' \
+          --key '{"environment":{"S":"'"$ENV_NAME"'"}}' \
           --query 'Item.status.S' \
           --output text 2>/dev/null || echo "UNLOCKED")
 
@@ -212,7 +237,7 @@ jobs:
         STATUS=$(aws dynamodb get-item \
             --table-name $HISTORY_TABLE \
             --key '{
-            "environment":{"S":"PROD"},
+            "environment":{"S":"'"$ENV_NAME"'"},
             "deployment_record":{"S":"'"$file"'"}
             }' \
             --query 'Item.status.S' \
@@ -252,7 +277,7 @@ jobs:
             aws dynamodb put-item \
             --table-name $HISTORY_TABLE \
             --item '{
-                "environment":{"S":"PROD"},
+                "environment":{"S":"'"$ENV_NAME"'"},
                 "deployment_record":{"S":"'"$file"'"},
                 "git_commit":{"S":"${{ github.sha }}"},
                 "status":{"S":"SUCCESS"},
@@ -266,7 +291,7 @@ jobs:
             aws dynamodb put-item \
             --table-name $HISTORY_TABLE \
             --item '{
-                "environment":{"S":"PROD"},
+                "environment":{"S":"'"$ENV_NAME"'"},
                 "deployment_record":{"S":"'"$file"'"},
                 "git_commit":{"S":"${{ github.sha }}"},
                 "status":{"S":"FAILED"},
@@ -276,11 +301,12 @@ jobs:
             aws dynamodb put-item \
             --table-name $LOCK_TABLE \
             --item '{
-                "environment":{"S":"PROD"},
+                "environment":{"S":"'"$ENV_NAME"'"},
                 "status":{"S":"LOCKED"},
                 "failed_script":{"S":"'"$file"'"},
                 "failed_commit":{"S":"${{ github.sha }}"},
-                "failed_time":{"S":"'"$(date -u +%FT%TZ)"'"}
+                "failed_time":{"S":"'"$(date -u +%FT%TZ)"'"},
+                "workflow_url":{"S":"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}
             }'
 
             exit 1
@@ -364,7 +390,7 @@ jobs:
         aws dynamodb put-item \
           --table-name $HISTORY_TABLE \
           --item '{
-            "environment":{"S":"PROD"},
+            "environment":{"S":"'"$ENV_NAME"'"},
             "deployment_record":{"S":"DEPLOYMENT#${{ github.run_id }}#${{ github.sha }}"},
             "git_commit":{"S":"${{ github.sha }}"},
             "status":{"S":"SUCCESS"},
@@ -383,7 +409,7 @@ jobs:
         aws dynamodb put-item \
         --table-name $HISTORY_TABLE \
         --item '{
-            "environment":{"S":"PROD"},
+            "environment":{"S":"'"$ENV_NAME"'"},
             "deployment_record":{"S":"SCHEMA_VERSION"},
             "git_commit":{"S":"${{ github.sha }}"},
             "status":{"S":"CURRENT"},
@@ -404,7 +430,7 @@ jobs:
         aws dynamodb put-item \
           --table-name $LOCK_TABLE \
           --item '{
-            "environment":{"S":"PROD"},
+            "environment":{"S":"'"$ENV_NAME"'"},
             "status":{"S":"UNLOCKED"},
             "resolved_time":{"S":"'"$(date -u +%FT%TZ)"'"}
           }'
