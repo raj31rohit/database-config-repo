@@ -6,3 +6,4 @@ CREATE TABLE customer_address_test_2 (
     country VARCHAR2(100),
     created_date DATE DEFAULT SYSDATE
 );
+
