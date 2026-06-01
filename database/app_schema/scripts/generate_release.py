@@ -1,6 +1,9 @@
 from pathlib import Path
 import subprocess
 
+import os
+import sys
+
 OBJECT_ORDER = {
     "tables": 1,
     "constraints": 2,
