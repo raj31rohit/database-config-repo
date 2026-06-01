@@ -154,6 +154,22 @@ jobs:
 
         cat release.sql
 
+  - name: Debug Git Changes
+  shell: bash
+  run: |
+
+    echo "===== CURRENT COMMIT ====="
+    git rev-parse HEAD
+
+    echo ""
+    echo "===== PREVIOUS COMMIT ====="
+    git rev-parse HEAD~1
+
+    echo ""
+    echo "===== CHANGED FILES ====="
+
+    git diff --name-only HEAD~1 HEAD
+    
     # =====================================================
     # Verify Oracle Login
     # =====================================================

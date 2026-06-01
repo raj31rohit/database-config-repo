@@ -96,11 +96,23 @@ sql_files.sort(
 # Validate Deployment
 # =====================================================
 
+# if not sql_files:
+
+#     raise Exception(
+#         "No SQL files found for deployment."
+#     )
+
 if not sql_files:
 
-    raise Exception(
-        "No SQL files found for deployment."
-    )
+    print("No SQL files found.")
+
+    with open(RELEASE_FILE, "w") as f:
+        f.write("-- No deployment required\n")
+
+    with open(DEPLOYMENT_LIST, "w") as f:
+        pass
+
+    sys.exit(0)
 
 # =====================================================
 # Generate deployment_list.txt
