@@ -1,9 +1,7 @@
 name: Oracle DB Deployment
 
 on:
-
   push:
-
     branches:
       - develop
       - qa
@@ -22,11 +20,10 @@ jobs:
     environment: PROD
 
     env:
-
       DB_URL: ${{ secrets.DB_URL }}
       DB_USER: ${{ secrets.DB_USER }}
       DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-
+      DEPLOY_MODE: DEPLOYMENT
       LOCK_TABLE: DB_DEPLOYMENT_LOCK
       HISTORY_TABLE: DB_DEPLOYMENT_HISTORY
 
@@ -42,6 +39,15 @@ jobs:
         fetch-depth: 0
 
     # =====================================================
+    # Setup Python
+    # =====================================================
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    # =====================================================
     # Configure Oracle Environment
     # =====================================================
 
@@ -50,7 +56,6 @@ jobs:
       run: |
 
         echo "/opt/oracle/instantclient_21_9" >> $GITHUB_PATH
-
         echo "LD_LIBRARY_PATH=/opt/oracle/instantclient_21_9" >> $GITHUB_ENV
 
     # =====================================================
@@ -62,7 +67,6 @@ jobs:
       run: |
 
         which sqlplus
-
         sqlplus -V
 
     # =====================================================
@@ -76,13 +80,19 @@ jobs:
         aws-region: us-east-1
 
     # =====================================================
-    # Setup Python
+    # Verify AWS Access
     # =====================================================
 
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.12"
+    - name: Verify AWS Access
+      shell: bash
+      run: |
+
+        aws sts get-caller-identity
+
+        echo ""
+        echo "===== DYNAMODB TABLES ====="
+
+        aws dynamodb list-tables
 
     # =====================================================
     # Convert JDBC URL
@@ -104,11 +114,12 @@ jobs:
       shell: bash
       run: |
 
-        ENV_NAME="PROD"
+        echo ""
+        echo "===== CHECKING DEPLOYMENT LOCK ====="
 
         LOCK_STATUS=$(aws dynamodb get-item \
           --table-name $LOCK_TABLE \
-          --key '{"environment":{"S":"'"$ENV_NAME"'"}}' \
+          --key '{"environment":{"S":"PROD"}}' \
           --query 'Item.status.S' \
           --output text 2>/dev/null || echo "UNLOCKED")
 
@@ -123,17 +134,22 @@ jobs:
         fi
 
     # =====================================================
-    # Generate release.sql
+    # Generate deployment files
     # =====================================================
 
-    - name: Generate release.sql
+    - name: Generate Deployment Files
       shell: bash
       run: |
 
         python3 database/app_schema/scripts/generate_release.py
 
         echo ""
-        echo "===== GENERATED release.sql ====="
+        echo "===== deployment_list.txt ====="
+
+        cat deployment_list.txt
+
+        echo ""
+        echo "===== release.sql ====="
 
         cat release.sql
 
@@ -146,42 +162,115 @@ jobs:
       run: |
 
         cat > verify.sql <<EOF
-
         CONNECT $DB_USER/$DB_PASSWORD@$DB_CONNECT
+
+        PROMPT
+        PROMPT ===== CONNECTED USER =====
 
         SELECT USER FROM DUAL;
 
         EXIT;
-
         EOF
 
         sqlplus -s /nolog @verify.sql
 
-    # =====================================================
-    # Execute Deployment
-    # =====================================================
-
-    - name: Execute Deployment
-      id: deploy
+    - name: Execute SQL Files
       shell: bash
       run: |
 
-        cat > run_release.sql <<EOF
+        while read file
+        do
+
+        [ -z "$file" ] && continue
+
+        echo ""
+        echo "====================================="
+        echo "Processing : $file"
+        echo "====================================="
+
+        # ------------------------------------
+        # Check Deployment History
+        # ------------------------------------
+
+        STATUS=$(aws dynamodb get-item \
+            --table-name $HISTORY_TABLE \
+            --key '{
+            "environment":{"S":"PROD"},
+            "deployment_record":{"S":"'"$file"'"}
+            }' \
+            --query 'Item.status.S' \
+            --output text 2>/dev/null || echo "NONE")
+
+        echo "History Status : $STATUS"
+
+        if [ "$STATUS" = "SUCCESS" ]; then
+
+            echo "Skipping already deployed file"
+
+            continue
+
+        fi
+
+        # ------------------------------------
+        # Execute SQL File
+        # ------------------------------------
+
+        cat > run_file.sql <<EOF
 
         CONNECT $DB_USER/$DB_PASSWORD@$DB_CONNECT
 
         WHENEVER SQLERROR EXIT FAILURE
 
-        SET ECHO ON
-        SET SERVEROUTPUT ON
-
-        @release.sql
+        @$file
 
         EXIT;
 
         EOF
 
-        sqlplus -s /nolog @run_release.sql
+        if sqlplus -s /nolog @run_file.sql
+        then
+
+            echo "SUCCESS : $file"
+
+            aws dynamodb put-item \
+            --table-name $HISTORY_TABLE \
+            --item '{
+                "environment":{"S":"PROD"},
+                "deployment_record":{"S":"'"$file"'"},
+                "git_commit":{"S":"${{ github.sha }}"},
+                "status":{"S":"SUCCESS"},
+                "deployment_time":{"S":"'"$(date -u +%FT%TZ)"'"}
+            }'
+
+        else
+
+            echo "FAILED : $file"
+
+            aws dynamodb put-item \
+            --table-name $HISTORY_TABLE \
+            --item '{
+                "environment":{"S":"PROD"},
+                "deployment_record":{"S":"'"$file"'"},
+                "git_commit":{"S":"${{ github.sha }}"},
+                "status":{"S":"FAILED"},
+                "deployment_time":{"S":"'"$(date -u +%FT%TZ)"'"}
+            }'
+
+            aws dynamodb put-item \
+            --table-name $LOCK_TABLE \
+            --item '{
+                "environment":{"S":"PROD"},
+                "status":{"S":"LOCKED"},
+                "failed_script":{"S":"'"$file"'"},
+                "failed_commit":{"S":"${{ github.sha }}"},
+                "failed_time":{"S":"'"$(date -u +%FT%TZ)"'"}
+            }'
+
+            exit 1
+
+        fi
+
+        done < deployment_list.txt
 
     # =====================================================
     # Compile Schema
@@ -195,14 +284,11 @@ jobs:
         cat > compile.sql <<EOF
 
         BEGIN
-
           DBMS_UTILITY.compile_schema(
             schema => '$DB_USER'
           );
-
         END;
         /
-
         EXIT;
 
         EOF
@@ -262,7 +348,7 @@ jobs:
           --table-name $HISTORY_TABLE \
           --item '{
             "environment":{"S":"PROD"},
-            "deployment_id":{"S":"${{ github.run_id }}"},
+            "deployment_record":{"S":"DEPLOYMENT#${{ github.run_id }}#${{ github.sha }}"},
             "git_commit":{"S":"${{ github.sha }}"},
             "status":{"S":"SUCCESS"},
             "deployment_time":{"S":"'"$(date -u +%FT%TZ)"'"}
@@ -278,33 +364,16 @@ jobs:
       run: |
 
         aws dynamodb put-item \
-          --table-name $HISTORY_TABLE \
-          --item '{
+        --table-name $HISTORY_TABLE \
+        --item '{
             "environment":{"S":"PROD"},
-            "deployment_id":{"S":"SCHEMA_VERSION"},
+            "deployment_record":{"S":"SCHEMA_VERSION"},
             "git_commit":{"S":"${{ github.sha }}"},
             "status":{"S":"CURRENT"},
             "deployment_time":{"S":"'"$(date -u +%FT%TZ)"'"}
-          }'
+        }'
 
-    # =====================================================
-    # Create Deployment Lock
-    # =====================================================
 
-    - name: Create Deployment Lock
-      if: failure()
-      shell: bash
-      run: |
-
-        aws dynamodb put-item \
-          --table-name $LOCK_TABLE \
-          --item '{
-            "environment":{"S":"PROD"},
-            "status":{"S":"LOCKED"},
-            "failed_commit":{"S":"${{ github.sha }}"},
-            "workflow_url":{"S":"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"},
-            "failed_time":{"S":"'"$(date -u +%FT%TZ)"'"}
-          }'
 
     # =====================================================
     # Remove Deployment Lock
@@ -322,3 +391,345 @@ jobs:
             "status":{"S":"UNLOCKED"},
             "resolved_time":{"S":"'"$(date -u +%FT%TZ)"'"}
           }'
+
+    # =====================================================
+    # Deployment Summary
+    # =====================================================
+
+    - name: Deployment Summary
+      if: success()
+      shell: bash
+      run: |
+
+        echo ""
+        echo "======================================"
+        echo "DEPLOYMENT SUCCESSFUL"
+        echo "Commit : ${{ github.sha }}"
+        echo "Run Id : ${{ github.run_id }}"
+        echo "======================================"
+
+
+
+# name: Oracle DB Deployment
+
+# on:
+
+#   push:
+
+#     branches:
+#       - develop
+#       - qa
+#       - main
+
+# permissions:
+#   contents: read
+#   id-token: write
+
+# jobs:
+
+#   deploy-db:
+
+#     runs-on: self-hosted
+
+#     environment: PROD
+
+#     env:
+
+#       DB_URL: ${{ secrets.DB_URL }}
+#       DB_USER: ${{ secrets.DB_USER }}
+#       DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+
+#       LOCK_TABLE: DB_DEPLOYMENT_LOCK
+#       HISTORY_TABLE: DB_DEPLOYMENT_HISTORY
+
+#     steps:
+
+#     # =====================================================
+#     # Checkout Repository
+#     # =====================================================
+
+#     - name: Checkout Repository
+#       uses: actions/checkout@v4
+#       with:
+#         fetch-depth: 0
+
+#     # =====================================================
+#     # Configure Oracle Environment
+#     # =====================================================
+
+#     - name: Configure Oracle Environment
+#       shell: bash
+#       run: |
+
+#         echo "/opt/oracle/instantclient_21_9" >> $GITHUB_PATH
+
+#         echo "LD_LIBRARY_PATH=/opt/oracle/instantclient_21_9" >> $GITHUB_ENV
+
+#     # =====================================================
+#     # Verify SQLPlus
+#     # =====================================================
+
+#     - name: Verify SQLPlus
+#       shell: bash
+#       run: |
+
+#         which sqlplus
+
+#         sqlplus -V
+
+#     # =====================================================
+#     # Configure AWS Credentials
+#     # =====================================================
+
+#     - name: Configure AWS Credentials
+#       uses: aws-actions/configure-aws-credentials@v4
+#       with:
+#         role-to-assume: arn:aws:iam::054276329279:role/github-actions-oidc-role
+#         aws-region: us-east-1
+
+#     # =====================================================
+#     # Setup Python
+#     # =====================================================
+
+#     - name: Setup Python
+#       uses: actions/setup-python@v5
+#       with:
+#         python-version: "3.12"
+
+#     # =====================================================
+#     # Convert JDBC URL
+#     # =====================================================
+
+#     - name: Convert JDBC URL
+#       shell: bash
+#       run: |
+
+#         DB_CONNECT=$(echo "$DB_URL" | sed 's#jdbc:oracle:thin:@##')
+
+#         echo "DB_CONNECT=$DB_CONNECT" >> $GITHUB_ENV
+
+#     # =====================================================
+#     # Check Deployment Lock
+#     # =====================================================
+
+#     - name: Check Deployment Lock
+#       shell: bash
+#       run: |
+
+#         ENV_NAME="PROD"
+
+#         LOCK_STATUS=$(aws dynamodb get-item \
+#           --table-name $LOCK_TABLE \
+#           --key '{"environment":{"S":"'"$ENV_NAME"'"}}' \
+#           --query 'Item.status.S' \
+#           --output text 2>/dev/null || echo "UNLOCKED")
+
+#         echo "Lock Status = $LOCK_STATUS"
+
+#         if [ "$LOCK_STATUS" = "LOCKED" ]; then
+
+#           echo "Deployment blocked."
+
+#           exit 1
+
+#         fi
+
+#     # =====================================================
+#     # Generate release.sql
+#     # =====================================================
+
+#     - name: Generate release.sql
+#       shell: bash
+#       run: |
+
+#         python3 database/app_schema/scripts/generate_release.py
+
+#         echo ""
+#         echo "===== GENERATED release.sql ====="
+
+#         cat release.sql
+
+#     # =====================================================
+#     # Verify Oracle Login
+#     # =====================================================
+
+#     - name: Verify Oracle Login
+#       shell: bash
+#       run: |
+
+#         cat > verify.sql <<EOF
+
+#         CONNECT $DB_USER/$DB_PASSWORD@$DB_CONNECT
+
+#         SELECT USER FROM DUAL;
+
+#         EXIT;
+
+#         EOF
+
+#         sqlplus -s /nolog @verify.sql
+
+#     # =====================================================
+#     # Execute Deployment
+#     # =====================================================
+
+#     - name: Execute Deployment
+#       id: deploy
+#       shell: bash
+#       run: |
+
+#         cat > run_release.sql <<EOF
+
+#         CONNECT $DB_USER/$DB_PASSWORD@$DB_CONNECT
+
+#         WHENEVER SQLERROR EXIT FAILURE
+
+#         SET ECHO ON
+#         SET SERVEROUTPUT ON
+
+#         @release.sql
+
+#         EXIT;
+
+#         EOF
+
+#         sqlplus -s /nolog @run_release.sql
+
+#     # =====================================================
+#     # Compile Schema
+#     # =====================================================
+
+#     - name: Compile Schema
+#       if: success()
+#       shell: bash
+#       run: |
+
+#         cat > compile.sql <<EOF
+
+#         BEGIN
+
+#           DBMS_UTILITY.compile_schema(
+#             schema => '$DB_USER'
+#           );
+
+#         END;
+#         /
+
+#         EXIT;
+
+#         EOF
+
+#         sqlplus -s \
+#         "$DB_USER/$DB_PASSWORD@$DB_CONNECT" \
+#         @compile.sql
+
+#     # =====================================================
+#     # Validate Invalid Objects
+#     # =====================================================
+
+#     - name: Validate Invalid Objects
+#       if: success()
+#       shell: bash
+#       run: |
+
+#         cat > invalid.sql <<EOF
+
+#         SET HEADING OFF
+#         SET FEEDBACK OFF
+
+#         SELECT COUNT(*)
+#         FROM user_objects
+#         WHERE status='INVALID';
+
+#         EXIT;
+
+#         EOF
+
+#         COUNT=$(
+#           sqlplus -s \
+#           "$DB_USER/$DB_PASSWORD@$DB_CONNECT" \
+#           @invalid.sql
+#         )
+
+#         COUNT=$(echo "$COUNT" | tr -d '[:space:]')
+
+#         if [ "$COUNT" != "0" ]; then
+
+#           echo "Invalid objects detected"
+
+#           exit 1
+
+#         fi
+
+#     # =====================================================
+#     # Update Deployment History
+#     # =====================================================
+
+#     - name: Update Deployment History
+#       if: success()
+#       shell: bash
+#       run: |
+
+#         aws dynamodb put-item \
+#         --table-name $HISTORY_TABLE \
+#         --item '{
+#             "environment":{"S":"PROD"},
+#             "deployment_record":{"S":"DEPLOYMENT#${{ github.run_id }}"},
+#             "git_commit":{"S":"${{ github.sha }}"},
+#             "status":{"S":"SUCCESS"},
+#             "deployment_time":{"S":"'"$(date -u +%FT%TZ)"'"}
+#         }'
+#     # =====================================================
+#     # Update Schema Version
+#     # =====================================================
+
+#     - name: Update Schema Version
+#       if: success()
+#       shell: bash
+#       run: |
+
+#         aws dynamodb put-item \
+#           --table-name $HISTORY_TABLE \
+#           --item '{
+#             "environment":{"S":"PROD"},
+#             "deployment_id":{"S":"SCHEMA_VERSION"},
+#             "git_commit":{"S":"${{ github.sha }}"},
+#             "status":{"S":"CURRENT"},
+#             "deployment_time":{"S":"'"$(date -u +%FT%TZ)"'"}
+#           }'
+
+#     # =====================================================
+#     # Create Deployment Lock
+#     # =====================================================
+
+#     - name: Create Deployment Lock
+#       if: failure()
+#       shell: bash
+#       run: |
+
+#         aws dynamodb put-item \
+#           --table-name $LOCK_TABLE \
+#           --item '{
+#             "environment":{"S":"PROD"},
+#             "status":{"S":"LOCKED"},
+#             "failed_commit":{"S":"${{ github.sha }}"},
+#             "workflow_url":{"S":"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"},
+#             "failed_time":{"S":"'"$(date -u +%FT%TZ)"'"}
+#           }'
+
+#     # =====================================================
+#     # Remove Deployment Lock
+#     # =====================================================
+
+#     - name: Remove Deployment Lock
+#       if: success()
+#       shell: bash
+#       run: |
+
+#         aws dynamodb put-item \
+#           --table-name $LOCK_TABLE \
+#           --item '{
+#             "environment":{"S":"PROD"},
+#             "status":{"S":"UNLOCKED"},
+#             "resolved_time":{"S":"'"$(date -u +%FT%TZ)"'"}
+#           }'
