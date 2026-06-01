@@ -18,6 +18,9 @@ OBJECT_ORDER = {
     "changes": 11
 }
 
+# These folders are tracked in git for reference but never deployed forward.
+SKIP_FOLDERS = {"rollback"}
+
 RELEASE_FILE = "release.sql"
 DEPLOYMENT_LIST = "deployment_list.txt"
 
@@ -80,6 +83,9 @@ for file in changed_files:
             continue
 
         object_type = parts[2]
+
+        if object_type in SKIP_FOLDERS:
+            continue
 
         if object_type not in OBJECT_ORDER:
 
