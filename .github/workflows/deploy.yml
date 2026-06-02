@@ -279,9 +279,12 @@ jobs:
             --item '{
                 "environment":{"S":"'"$ENV_NAME"'"},
                 "deployment_record":{"S":"'"$file"'"},
+                "deployment_batch":{"S":"${{ github.run_id }}"},
+                "script_name":{"S":"'"$(echo "$file" | sed 's|database/app_schema/||')"'"},
+                "branch":{"S":"${{ github.ref_name }}"},
                 "git_commit":{"S":"${{ github.sha }}"},
                 "status":{"S":"SUCCESS"},
-                "deployment_time":{"S":"'"$(date -u +%FT%TZ)"'"}
+                "deployed_on":{"S":"'"$(date -u +%FT%TZ)"'"}
             }'
 
         else
@@ -293,9 +296,12 @@ jobs:
             --item '{
                 "environment":{"S":"'"$ENV_NAME"'"},
                 "deployment_record":{"S":"'"$file"'"},
+                "deployment_batch":{"S":"${{ github.run_id }}"},
+                "script_name":{"S":"'"$(echo "$file" | sed 's|database/app_schema/||')"'"},
+                "branch":{"S":"${{ github.ref_name }}"},
                 "git_commit":{"S":"${{ github.sha }}"},
                 "status":{"S":"FAILED"},
-                "deployment_time":{"S":"'"$(date -u +%FT%TZ)"'"}
+                "deployed_on":{"S":"'"$(date -u +%FT%TZ)"'"}
             }'
 
             aws dynamodb put-item \
