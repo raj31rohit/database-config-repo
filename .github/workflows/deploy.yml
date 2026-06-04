@@ -84,7 +84,7 @@ jobs:
     - name: Configure AWS Credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        role-to-assume: arn:aws:iam::054276329279:role/github-actions-oidc-role
+        role-to-assume: ${{ secrets.AWS_ROLE }}
         aws-region: us-east-1
 
     # =====================================================
@@ -398,9 +398,11 @@ jobs:
           --item '{
             "environment":{"S":"'"$ENV_NAME"'"},
             "deployment_record":{"S":"DEPLOYMENT#${{ github.run_id }}#${{ github.sha }}"},
+            "deployment_batch":{"S":"${{ github.run_id }}"},
+            "branch":{"S":"${{ github.ref_name }}"},
             "git_commit":{"S":"${{ github.sha }}"},
             "status":{"S":"SUCCESS"},
-            "deployment_time":{"S":"'"$(date -u +%FT%TZ)"'"}
+            "deployed_on":{"S":"'"$(date -u +%FT%TZ)"'"}
           }'
 
     # =====================================================
@@ -417,9 +419,11 @@ jobs:
         --item '{
             "environment":{"S":"'"$ENV_NAME"'"},
             "deployment_record":{"S":"SCHEMA_VERSION"},
+            "deployment_batch":{"S":"${{ github.run_id }}"},
+            "branch":{"S":"${{ github.ref_name }}"},
             "git_commit":{"S":"${{ github.sha }}"},
             "status":{"S":"CURRENT"},
-            "deployment_time":{"S":"'"$(date -u +%FT%TZ)"'"}
+            "deployed_on":{"S":"'"$(date -u +%FT%TZ)"'"}
         }'
 
 
