@@ -6,6 +6,16 @@ on:
       - develop
       - qa
       - main
+  workflow_dispatch:
+    inputs:
+      deploy_mode:
+        description: 'DEPLOYMENT = this PR only | RECONCILE = all pending files'
+        required: true
+        default: 'RECONCILE'
+        type: choice
+        options:
+          - RECONCILE
+          - DEPLOYMENT
 
 permissions:
   contents: read
@@ -30,7 +40,7 @@ jobs:
       DB_URL: ${{ secrets.DB_URL }}
       DB_USER: ${{ secrets.DB_USER }}
       DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-      DEPLOY_MODE: DEPLOYMENT
+      DEPLOY_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_mode || 'DEPLOYMENT' }}
       LOCK_TABLE: DB_DEPLOYMENT_LOCK
       HISTORY_TABLE: DB_DEPLOYMENT_HISTORY
 

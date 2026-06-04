@@ -51,20 +51,31 @@ if MODE == "VALIDATION":
         print(f)
     print("")
 
-else:
+elif MODE == "DEPLOYMENT":
+
+    # Only deploy files changed in this PR (HEAD vs its parent)
+    changed_files = subprocess.check_output(
+        ["git", "diff", "--name-only", "HEAD^1", "HEAD"]
+    ).decode().splitlines()
+
+    print("")
+    print("===== CHANGED FILES (this PR) =====")
+    for f in changed_files:
+        print(f)
+    print("")
+
+elif MODE == "RECONCILE":
 
     # =====================================================
-    # DEPLOYMENT mode:
+    # RECONCILE mode:
     # Scan the entire repo and cross-check against DynamoDB.
-    # Deploy anything without a SUCCESS record.
+    # Deploys ALL files without a SUCCESS record.
+    # Use this to catch up on files missed by previous deployments.
+    # Triggered manually via workflow_dispatch.
     # =====================================================
 
     ENV_NAME      = os.getenv("ENV_NAME",      "PROD")
     HISTORY_TABLE = os.getenv("HISTORY_TABLE", "DB_DEPLOYMENT_HISTORY")
-
-    # --------------------------------------------------
-    # Step 1 — Query DynamoDB for all SUCCESS records
-    # --------------------------------------------------
 
     print("")
     print(f"===== QUERYING DYNAMODB (env={ENV_NAME}) =====")
@@ -88,10 +99,6 @@ else:
 
     print(f"Already deployed : {len(deployed_files)} records")
 
-    # --------------------------------------------------
-    # Step 2 — Scan all SQL files in the repo
-    # --------------------------------------------------
-
     print("")
     print("===== SCANNING REPO =====")
 
@@ -99,10 +106,8 @@ else:
 
     for file_path in sorted(Path("database/app_schema").rglob("*.sql")):
 
-        # Normalise to forward slashes (Windows runner safety)
         file_str = str(file_path).replace("\\", "/")
-
-        parts = Path(file_str).parts
+        parts    = Path(file_str).parts
 
         if len(parts) < 3:
             continue
@@ -115,32 +120,27 @@ else:
         if object_type not in OBJECT_ORDER:
             raise Exception(f"Unsupported object folder: {object_type}")
 
-        order = OBJECT_ORDER[object_type]
-        repo_sql_files.append((order, file_str))
+        repo_sql_files.append((OBJECT_ORDER[object_type], file_str))
 
     print(f"Total SQL files in repo : {len(repo_sql_files)}")
-
-    # --------------------------------------------------
-    # Step 3 — Cross-check: pending = repo - deployed
-    # --------------------------------------------------
 
     print("")
     print("===== PENDING FILES =====")
 
     pending = []
-
     for order, file_str in sorted(repo_sql_files):
-
         if file_str in deployed_files:
-            print(f"  SKIP (already deployed) : {file_str}")
+            print(f"  SKIP    : {file_str}")
         else:
-            print(f"  PENDING                 : {file_str}")
+            print(f"  PENDING : {file_str}")
             pending.append((order, file_str))
 
     print("")
-
-    # Use pending list as changed_files for the rest of the script
     changed_files = [f for _, f in pending]
+
+else:
+
+    raise Exception(f"Unknown DEPLOY_MODE: {MODE}. Use VALIDATION, DEPLOYMENT or RECONCILE.")
 
 # =====================================================
 # Filter and sort SQL files (VALIDATION mode uses this too)
