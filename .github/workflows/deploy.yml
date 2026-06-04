@@ -197,13 +197,16 @@ jobs:
       shell: bash
       run: |
 
-        PR_NUMBER=$(git log -1 --pretty=%B \
-          | grep -oP 'pull request #\K[0-9]+' \
+        COMMIT_MSG=$(git log -1 --pretty=%B)
+
+        PR_NUMBER=$(echo "$COMMIT_MSG" \
+          | sed -n 's/.*pull request #\([0-9]*\).*/\1/p' \
           | head -1)
 
-        echo "PR_NUMBER=${PR_NUMBER:-N/A}" >> $GITHUB_ENV
+        PR_NUMBER="${PR_NUMBER:-N/A}"
 
-        echo "PR Number : ${PR_NUMBER:-N/A}"
+        echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_ENV
+        echo "PR Number : $PR_NUMBER"
 
     # =====================================================
     # Verify Oracle Login
