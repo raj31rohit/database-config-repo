@@ -36,13 +36,13 @@ print(f"MODE = {MODE}")
 
 if MODE == "VALIDATION":
 
-    # Compare PR branch against main
-    base_branch = subprocess.check_output(
-        ["git", "merge-base", "HEAD", "origin/main"]
-    ).decode().strip()
+    # Use BASE_REF env var passed from validate.yml
+    # Matches what validate.yml "Show Changed Files" step uses:
+    # git diff --name-only origin/${{ github.base_ref }} HEAD
+    base_ref = os.getenv("BASE_REF", "main")
 
     changed_files = subprocess.check_output(
-        ["git", "diff", "--name-only", base_branch, "HEAD"]
+        ["git", "diff", "--name-only", f"origin/{base_ref}", "HEAD"]
     ).decode().splitlines()
 
     print("")
