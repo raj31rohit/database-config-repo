@@ -190,6 +190,8 @@ jobs:
           seed_data
           changes
           rollback
+          grants
+          synonyms
         )
 
         changedFiles=$(git diff --name-only \

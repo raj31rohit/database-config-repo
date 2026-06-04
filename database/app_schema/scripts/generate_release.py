@@ -15,7 +15,9 @@ OBJECT_ORDER = {
     "procedures": 8,
     "packages": 9,
     "seed_data": 10,
-    "changes": 11
+    "changes": 11,
+    "grants": 12,
+    "synonyms": 13
 }
 
 # Tracked in git for reference but never deployed forward.
