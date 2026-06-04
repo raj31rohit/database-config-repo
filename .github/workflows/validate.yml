@@ -288,6 +288,15 @@ jobs:
 
     # =====================================================
     # Dangerous SQL Validation
+    #
+    # Tier 1 — Absolute block in ALL folders:
+    #   DROP USER, DROP TABLESPACE, ALTER SYSTEM,
+    #   DROP DATABASE LINK, DROP ROLE
+    #
+    # Tier 2 — Block in definition folders only
+    #   (tables/ constraints/ indexes/ sequences/)
+    #   DROP TABLE, TRUNCATE TABLE are allowed in changes/
+    #   because corrections may require table rebuilds.
     # =====================================================
 
     - name: Validate Dangerous Statements
@@ -302,15 +311,28 @@ jobs:
 
           if [[ "$file" == *.sql ]]; then
 
+            # Tier 1 — blocked everywhere, no exceptions
             if grep -Eiq \
-            "DROP TABLE|TRUNCATE TABLE|DROP USER|DROP TABLESPACE|ALTER SYSTEM|DROP DATABASE LINK|DROP ROLE" \
+            "DROP USER|DROP TABLESPACE|ALTER SYSTEM|DROP DATABASE LINK|DROP ROLE" \
             "$file"; then
 
-              echo "Dangerous statement found"
-
-              echo "$file"
-
+              echo "ERROR: Absolutely prohibited statement found in: $file"
               exit 1
+
+            fi
+
+            # Tier 2 — blocked only in definition folders, allowed in changes/
+            if [[ "$file" != database/app_schema/changes/* ]]; then
+
+              if grep -Eiq \
+              "DROP TABLE|TRUNCATE TABLE" \
+              "$file"; then
+
+                echo "ERROR: DROP TABLE / TRUNCATE TABLE not allowed in $file"
+                echo "Use a change script under changes/ for table corrections"
+                exit 1
+
+              fi
 
             fi
 

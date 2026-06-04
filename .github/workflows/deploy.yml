@@ -179,21 +179,21 @@ jobs:
 
         cat release.sql
 
-    - name: Debug Git Changes
+    # =====================================================
+    # Extract PR Number
+    # =====================================================
+
+    - name: Extract PR Number
       shell: bash
       run: |
 
-        echo "===== CURRENT COMMIT ====="
-        git rev-parse HEAD
+        PR_NUMBER=$(git log -1 --pretty=%B \
+          | grep -oP 'pull request #\K[0-9]+' \
+          | head -1)
 
-        echo ""
-        echo "===== PREVIOUS COMMIT ====="
-        git rev-parse HEAD~1
+        echo "PR_NUMBER=${PR_NUMBER:-N/A}" >> $GITHUB_ENV
 
-        echo ""
-        echo "===== CHANGED FILES ====="
-
-        git diff --name-only HEAD~1 HEAD
+        echo "PR Number : ${PR_NUMBER:-N/A}"
 
     # =====================================================
     # Verify Oracle Login
@@ -220,10 +220,16 @@ jobs:
       shell: bash
       run: |
 
+        DEPLOYED_COUNT=0
+        TOTAL_SCRIPTS=$(grep -c . deployment_list.txt 2>/dev/null || echo "0")
+
         while read file
         do
 
         [ -z "$file" ] && continue
+
+        SCRIPT_TYPE=$(echo "$file" | cut -d'/' -f3)
+        SCRIPT_NAME=$(echo "$file" | sed 's|database/app_schema/||')
 
         echo ""
         echo "====================================="
@@ -246,11 +252,8 @@ jobs:
         echo "History Status : $STATUS"
 
         if [ "$STATUS" = "SUCCESS" ]; then
-
             echo "Skipping already deployed file"
-
             continue
-
         fi
 
         # ------------------------------------
@@ -269,50 +272,73 @@ jobs:
 
         EOF
 
-        if sqlplus -s /nolog @run_file.sql
-        then
+        SQL_OUTPUT=$(sqlplus -s /nolog @run_file.sql 2>&1)
+        SQL_EXIT=$?
+
+        if [ $SQL_EXIT -eq 0 ]; then
 
             echo "SUCCESS : $file"
+            DEPLOYED_COUNT=$((DEPLOYED_COUNT + 1))
 
             aws dynamodb put-item \
             --table-name $HISTORY_TABLE \
             --item '{
-                "environment":{"S":"'"$ENV_NAME"'"},
+                "environment":    {"S":"'"$ENV_NAME"'"},
                 "deployment_record":{"S":"'"$file"'"},
                 "deployment_batch":{"S":"${{ github.run_id }}"},
-                "script_name":{"S":"'"$(echo "$file" | sed 's|database/app_schema/||')"'"},
-                "branch":{"S":"${{ github.ref_name }}"},
-                "git_commit":{"S":"${{ github.sha }}"},
-                "status":{"S":"SUCCESS"},
-                "deployed_on":{"S":"'"$(date -u +%FT%TZ)"'"}
+                "script_name":    {"S":"'"$SCRIPT_NAME"'"},
+                "script_type":    {"S":"'"$SCRIPT_TYPE"'"},
+                "branch":         {"S":"${{ github.ref_name }}"},
+                "git_commit":     {"S":"${{ github.sha }}"},
+                "pr_number":      {"S":"'"$PR_NUMBER"'"},
+                "deployed_by":    {"S":"${{ github.actor }}"},
+                "status":         {"S":"SUCCESS"},
+                "error_message":  {"S":""},
+                "deployed_on":    {"S":"'"$(date -u +%FT%TZ)"'"}
             }'
 
         else
 
             echo "FAILED : $file"
+            echo "$SQL_OUTPUT"
+
+            ERROR_MSG=$(echo "$SQL_OUTPUT" \
+              | grep -iE "ORA-[0-9]+|SP2-[0-9]+" \
+              | head -1 \
+              | tr '"' "'" \
+              | tr '\n' ' ' \
+              | cut -c1-300)
+
+            ERROR_MSG="${ERROR_MSG:-SQL execution failed}"
 
             aws dynamodb put-item \
             --table-name $HISTORY_TABLE \
             --item '{
-                "environment":{"S":"'"$ENV_NAME"'"},
+                "environment":    {"S":"'"$ENV_NAME"'"},
                 "deployment_record":{"S":"'"$file"'"},
                 "deployment_batch":{"S":"${{ github.run_id }}"},
-                "script_name":{"S":"'"$(echo "$file" | sed 's|database/app_schema/||')"'"},
-                "branch":{"S":"${{ github.ref_name }}"},
-                "git_commit":{"S":"${{ github.sha }}"},
-                "status":{"S":"FAILED"},
-                "deployed_on":{"S":"'"$(date -u +%FT%TZ)"'"}
+                "script_name":    {"S":"'"$SCRIPT_NAME"'"},
+                "script_type":    {"S":"'"$SCRIPT_TYPE"'"},
+                "branch":         {"S":"${{ github.ref_name }}"},
+                "git_commit":     {"S":"${{ github.sha }}"},
+                "pr_number":      {"S":"'"$PR_NUMBER"'"},
+                "deployed_by":    {"S":"${{ github.actor }}"},
+                "status":         {"S":"FAILED"},
+                "error_message":  {"S":"'"$ERROR_MSG"'"},
+                "deployed_on":    {"S":"'"$(date -u +%FT%TZ)"'"}
             }'
 
             aws dynamodb put-item \
             --table-name $LOCK_TABLE \
             --item '{
-                "environment":{"S":"'"$ENV_NAME"'"},
-                "status":{"S":"LOCKED"},
-                "failed_script":{"S":"'"$file"'"},
-                "failed_commit":{"S":"${{ github.sha }}"},
-                "failed_time":{"S":"'"$(date -u +%FT%TZ)"'"},
-                "workflow_url":{"S":"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}
+                "environment":   {"S":"'"$ENV_NAME"'"},
+                "status":        {"S":"LOCKED"},
+                "failed_script": {"S":"'"$file"'"},
+                "failed_batch":  {"S":"${{ github.run_id }}"},
+                "failed_commit": {"S":"${{ github.sha }}"},
+                "failed_time":   {"S":"'"$(date -u +%FT%TZ)"'"},
+                "error_message": {"S":"'"$ERROR_MSG"'"},
+                "workflow_url":  {"S":"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}
             }'
 
             exit 1
@@ -320,6 +346,9 @@ jobs:
         fi
 
         done < deployment_list.txt
+
+        echo "DEPLOYED_COUNT=$DEPLOYED_COUNT" >> $GITHUB_ENV
+        echo "TOTAL_SCRIPTS=$TOTAL_SCRIPTS"   >> $GITHUB_ENV
 
     # =====================================================
     # Compile Schema
@@ -396,13 +425,16 @@ jobs:
         aws dynamodb put-item \
           --table-name $HISTORY_TABLE \
           --item '{
-            "environment":{"S":"'"$ENV_NAME"'"},
+            "environment":      {"S":"'"$ENV_NAME"'"},
             "deployment_record":{"S":"DEPLOYMENT#${{ github.run_id }}#${{ github.sha }}"},
-            "deployment_batch":{"S":"${{ github.run_id }}"},
-            "branch":{"S":"${{ github.ref_name }}"},
-            "git_commit":{"S":"${{ github.sha }}"},
-            "status":{"S":"SUCCESS"},
-            "deployed_on":{"S":"'"$(date -u +%FT%TZ)"'"}
+            "deployment_batch": {"S":"${{ github.run_id }}"},
+            "branch":           {"S":"${{ github.ref_name }}"},
+            "git_commit":       {"S":"${{ github.sha }}"},
+            "pr_number":        {"S":"'"$PR_NUMBER"'"},
+            "scripts_deployed": {"S":"'"$DEPLOYED_COUNT"'"},
+            "deployed_by":      {"S":"${{ github.actor }}"},
+            "status":           {"S":"SUCCESS"},
+            "deployed_on":      {"S":"'"$(date -u +%FT%TZ)"'"}
           }'
 
     # =====================================================
@@ -417,13 +449,16 @@ jobs:
         aws dynamodb put-item \
         --table-name $HISTORY_TABLE \
         --item '{
-            "environment":{"S":"'"$ENV_NAME"'"},
+            "environment":      {"S":"'"$ENV_NAME"'"},
             "deployment_record":{"S":"SCHEMA_VERSION"},
-            "deployment_batch":{"S":"${{ github.run_id }}"},
-            "branch":{"S":"${{ github.ref_name }}"},
-            "git_commit":{"S":"${{ github.sha }}"},
-            "status":{"S":"CURRENT"},
-            "deployed_on":{"S":"'"$(date -u +%FT%TZ)"'"}
+            "deployment_batch": {"S":"${{ github.run_id }}"},
+            "branch":           {"S":"${{ github.ref_name }}"},
+            "git_commit":       {"S":"${{ github.sha }}"},
+            "pr_number":        {"S":"'"$PR_NUMBER"'"},
+            "scripts_deployed": {"S":"'"$DEPLOYED_COUNT"'"},
+            "deployed_by":      {"S":"${{ github.actor }}"},
+            "status":           {"S":"CURRENT"},
+            "deployed_on":      {"S":"'"$(date -u +%FT%TZ)"'"}
         }'
 
 
@@ -457,8 +492,13 @@ jobs:
         echo ""
         echo "======================================"
         echo "DEPLOYMENT SUCCESSFUL"
-        echo "Commit : ${{ github.sha }}"
-        echo "Run Id : ${{ github.run_id }}"
+        echo "Environment : $ENV_NAME"
+        echo "Branch      : ${{ github.ref_name }}"
+        echo "Commit      : ${{ github.sha }}"
+        echo "PR          : $PR_NUMBER"
+        echo "Run Id      : ${{ github.run_id }}"
+        echo "Deployed by : ${{ github.actor }}"
+        echo "Scripts     : $DEPLOYED_COUNT deployed"
         echo "======================================"
 
 
