@@ -360,8 +360,8 @@ jobs:
 
         done < deployment_list.txt
 
-        echo "DEPLOYED_COUNT=$DEPLOYED_COUNT" >> $GITHUB_ENV
-        echo "TOTAL_SCRIPTS=$TOTAL_SCRIPTS"   >> $GITHUB_ENV
+        echo "$DEPLOYED_COUNT" > /tmp/deployed_count.txt
+        echo "Scripts deployed : $DEPLOYED_COUNT"
 
     # =====================================================
     # Compile Schema
@@ -435,6 +435,8 @@ jobs:
       shell: bash
       run: |
 
+        DEPLOYED_COUNT=$(cat /tmp/deployed_count.txt 2>/dev/null || echo "0")
+
         aws dynamodb put-item \
           --table-name $HISTORY_TABLE \
           --item '{
@@ -458,6 +460,8 @@ jobs:
       if: success()
       shell: bash
       run: |
+
+        DEPLOYED_COUNT=$(cat /tmp/deployed_count.txt 2>/dev/null || echo "0")
 
         aws dynamodb put-item \
         --table-name $HISTORY_TABLE \
@@ -501,6 +505,8 @@ jobs:
       if: success()
       shell: bash
       run: |
+
+        DEPLOYED_COUNT=$(cat /tmp/deployed_count.txt 2>/dev/null || echo "0")
 
         echo ""
         echo "======================================"
