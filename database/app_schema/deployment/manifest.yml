@@ -6,10 +6,10 @@ deploy_order:
   # =====================================================
   # TABLES
   # =====================================================
+  - tables/customers.sql
   - tables/customer_address.sql
   - tables/products.sql
 
-  - tables/customers.sql
   - tables/orders.sql
   - tables/payments.sql
   - tables/shipment.sql
